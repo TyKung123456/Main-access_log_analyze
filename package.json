@@ -1,0 +1,72 @@
+{
+  "name": "access-log-analyzer",
+  "version": "1.0.0",
+  "description": "ระบบวิเคราะห์ Access Log สำหรับการรักษาความปลอดภัย",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint . --ext js,jsx --fix",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "setup": "node scripts/setup-env.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "start": "npm run preview",
+    "clean": "rm -rf dist node_modules/.vite"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "^4.3.0",
+    "jspdf": "^3.0.1",
+    "jspdf-autotable": "^5.0.2",
+    "lodash": "^4.17.21",
+    "lucide-react": "^0.263.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.8.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^14.4.3",
+    "@types/lodash": "^4.14.195",
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@vitejs/plugin-react": "^4.0.3",
+    "autoprefixer": "^10.4.14",
+    "eslint": "^8.45.0",
+    "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.3",
+    "postcss": "^8.4.27",
+    "tailwindcss": "^3.3.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "access-log",
+    "security",
+    "analytics",
+    "react",
+    "dashboard",
+    "vite",
+    "tailwindcss"
+  ],
+  "author": "Access Log Analyzer Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/access-log-analyzer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/access-log-analyzer/issues"
+  },
+  "homepage": "https://github.com/yourusername/access-log-analyzer#readme",
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}
