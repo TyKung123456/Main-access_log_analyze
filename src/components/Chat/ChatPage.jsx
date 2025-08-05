@@ -13,7 +13,8 @@ const ChatPage = () => {
     clearMessages,
     clearError,
     testOllamaConnection,
-    modelInfo
+    modelInfo,
+    setOllamaModel // Destructure setOllamaModel
   } = useChat();
 
   const messagesEndRef = useRef(null);
@@ -30,9 +31,13 @@ const ChatPage = () => {
     }
   }, [messages, isLoading]);
 
-  // Check Ollama connection on mount
+  // Check Ollama connection on mount and when modelInfo changes
   useEffect(() => {
     const checkConnection = async () => {
+      if (!modelInfo.url) { // Wait for modelInfo.url to be available
+        setConnectionStatus('checking');
+        return;
+      }
       try {
         const response = await fetch(`${modelInfo.url}/api/tags`, {
           method: 'GET',
@@ -52,7 +57,7 @@ const ChatPage = () => {
     };
 
     checkConnection();
-  }, [modelInfo.url, modelInfo.name]);
+  }, [modelInfo.url, modelInfo.name]); // Depend on modelInfo.url and modelInfo.name
 
   // Clear error after 10 seconds
   useEffect(() => {
@@ -72,7 +77,7 @@ const ChatPage = () => {
           color: 'green',
           icon: '✨',
           text: `เชื่อมต่อแล้ว`,
-          detail: `กำลังใช้ ${modelInfo.name}`,
+          detail: `กำลังใช้ ${modelInfo.name || 'N/A'}`,
           bgColor: 'bg-gradient-to-r from-green-50 to-emerald-50',
           textColor: 'text-green-700',
           borderColor: 'border-green-200'
@@ -82,7 +87,7 @@ const ChatPage = () => {
           color: 'yellow',
           icon: '🔍',
           text: `ยังไม่พร้อม`,
-          detail: `ต้องติดตั้ง ${modelInfo.name}`,
+          detail: `ต้องติดตั้ง ${modelInfo.name || 'โมเดล'}`,
           bgColor: 'bg-gradient-to-r from-yellow-50 to-orange-50',
           textColor: 'text-yellow-700',
           borderColor: 'border-yellow-200'
@@ -128,8 +133,8 @@ const ChatPage = () => {
     },
     {
       title: '⬇️ ติดตั้งโมเดลหลัก',
-      command: `ollama pull ${modelInfo.name}`,
-      description: 'ดาวน์โหลดโมเดล AI ที่ใช้ในระบบนี้',
+      command: `ollama pull ${modelInfo.name || 'llama3.2:3b'}`, // Use modelInfo.name or a default
+      description: `ดาวน์โหลดโมเดล AI ที่ใช้ในระบบนี้ (${modelInfo.name || 'llama3.2:3b'})`,
       color: 'bg-green-50 border-green-200 text-green-800'
     },
     {
@@ -174,6 +179,10 @@ const ChatPage = () => {
     }
   ];
 
+  const handleModelChange = (event) => {
+    setOllamaModel(event.target.value);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Header with friendly design */}
@@ -196,6 +205,29 @@ const ChatPage = () => {
           </div>
 
           <div className="flex items-center space-x-3">
+            {/* Model Selection Dropdown */}
+            {modelInfo.availableModels && modelInfo.availableModels.length > 0 && (
+              <div className="relative">
+                <select
+                  value={modelInfo.name || ''}
+                  onChange={handleModelChange}
+                  disabled={isLoading || connectionStatus === 'error'}
+                  className="block w-full pl-3 pr-10 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                >
+                  {modelInfo.availableModels.map((modelName) => (
+                    <option key={modelName} value={modelName}>
+                      {modelName}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                  <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+            )}
+
             {/* Friendly Connection Status */}
             <div className={`flex items-center px-4 py-2 rounded-full text-sm font-medium border ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} shadow-sm`}>
               <span className="mr-2 text-base">{statusInfo.icon}</span>
@@ -288,12 +320,12 @@ const ChatPage = () => {
                   เกือบพร้อมแล้ว!
                 </h3>
                 <p className="text-yellow-700 mb-4">
-                  เหลือแค่ติดตั้งโมเดล <strong>{modelInfo.name}</strong> เท่านั้น
+                  เหลือแค่ติดตั้งโมเดล <strong>{modelInfo.name || 'โมเดล'}</strong> เท่านั้น
                 </p>
                 <div className="bg-white/70 p-4 rounded-xl border border-white/50">
                   <div className="text-sm font-medium text-yellow-800 mb-2">🚀 รันคำสั่งนี้:</div>
                   <code className="block bg-yellow-100 p-3 rounded-lg font-mono text-sm text-yellow-900">
-                    ollama pull {modelInfo.name}
+                    ollama pull {modelInfo.name || 'llama3.2:3b'}
                   </code>
                 </div>
               </div>
@@ -356,7 +388,7 @@ const ChatPage = () => {
                     <div className="text-center p-3 bg-blue-50 rounded-xl">
                       <div className="text-2xl mb-1">🧠</div>
                       <div className="font-medium text-blue-900">โมเดล</div>
-                      <div className="text-blue-700 text-xs">{modelInfo.name}</div>
+                      <div className="text-blue-700 text-xs">{modelInfo.name || 'N/A'}</div>
                     </div>
                     <div className="text-center p-3 bg-green-50 rounded-xl">
                       <div className="text-2xl mb-1">🌐</div>
@@ -434,7 +466,7 @@ const ChatPage = () => {
                     <div className="bg-white p-4 rounded-xl border text-center">
                       <div className="text-3xl mb-2">3️⃣</div>
                       <div className="font-medium mb-2">ติดตั้งโมเดล</div>
-                      <code className="text-xs bg-gray-100 p-2 rounded block">ollama pull {modelInfo.name}</code>
+                      <code className="text-xs bg-gray-100 p-2 rounded block">ollama pull {modelInfo.name || 'llama3.2:3b'}</code>
                     </div>
                   </div>
                 </div>

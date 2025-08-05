@@ -1,5 +1,6 @@
 // src/hooks/useChat.js - Ollama Optimized
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import aiService from '../services/aiService'; // Import the aiService
 
 export const useChat = () => {
   const [messages, setMessages] = useState([
@@ -12,127 +13,45 @@ export const useChat = () => {
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [modelInfo, setModelInfo] = useState({
+    name: '',
+    url: '',
+    timeout: 30000,
+    debug: false,
+    availableModels: []
+  });
 
-  // Ollama configuration
-  const ollamaUrl = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
-  const ollamaModel = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2:3b';
-  const ollamaTimeout = parseInt(import.meta.env.VITE_OLLAMA_TIMEOUT) || 30000;
-  const maxRetries = parseInt(import.meta.env.VITE_OLLAMA_MAX_RETRIES) || 3;
-  const debugMode = import.meta.env.VITE_DEBUG_AI === 'true';
+  // Initialize model info from aiService
+  useEffect(() => {
+    const updateModelInfo = async () => {
+      const info = aiService.getProviderInfo();
+      // Ensure checkAvailability has been run to populate availableModels and ollamaModel
+      await aiService.checkAvailability(); 
+      const updatedInfo = aiService.getProviderInfo();
+      setModelInfo({
+        name: updatedInfo.ollamaModel || 'N/A',
+        url: updatedInfo.ollamaUrl,
+        timeout: aiService.timeout,
+        debug: aiService.debug,
+        availableModels: updatedInfo.availableModels.map(m => m.name)
+      });
+    };
+    updateModelInfo();
+  }, []);
 
   // Check Ollama availability
-  const checkOllamaStatus = async () => {
-    try {
-      const response = await fetch(`${ollamaUrl}/api/tags`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000) // 5 second timeout for health check
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Ollama server returned ${response.status}`);
-      }
-      
-      const data = await response.json();
-      const availableModels = data.models || [];
-      const hasModel = availableModels.some(model => model.name === ollamaModel);
-      
-      if (debugMode) {
-        console.log('🤖 Ollama Status:', {
-          available: true,
-          models: availableModels.map(m => m.name),
-          targetModel: ollamaModel,
-          hasTargetModel: hasModel
-        });
-      }
-      
-      return {
-        available: true,
-        hasModel,
-        availableModels: availableModels.map(m => m.name)
-      };
-    } catch (error) {
-      if (debugMode) {
-        console.error('❌ Ollama not available:', error.message);
-      }
-      return {
-        available: false,
-        error: error.message
-      };
-    }
-  };
-
-  // Optimized Ollama API call with retry logic
-  const callOllamaAPI = async (prompt, retryCount = 0) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), ollamaTimeout);
-
-    try {
-      if (debugMode) {
-        console.log(`🤖 Calling Ollama (attempt ${retryCount + 1}):`, {
-          model: ollamaModel,
-          promptLength: prompt.length,
-          timeout: ollamaTimeout
-        });
-      }
-
-      const response = await fetch(`${ollamaUrl}/api/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: ollamaModel,
-          prompt: prompt,
-          stream: false,
-          options: {
-            temperature: 0.7,
-            top_p: 0.9,
-            top_k: 40,
-            num_predict: 1000, // Maximum tokens to generate
-            num_ctx: 4096,     // Context window size
-            repeat_penalty: 1.1
-          }
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Ollama API Error: ${response.status} - ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      
-      if (debugMode) {
-        console.log('✅ Ollama Response:', {
-          responseLength: data.response?.length || 0,
-          totalDuration: data.total_duration,
-          loadDuration: data.load_duration,
-          promptEvalCount: data.prompt_eval_count,
-          evalCount: data.eval_count
-        });
-      }
-
-      return data.response || 'ขออภัยครับ ไม่สามารถสร้างคำตอบได้';
-
-    } catch (error) {
-      clearTimeout(timeoutId);
-      
-      if (error.name === 'AbortError') {
-        throw new Error(`คำขอหมดเวลา (${ollamaTimeout / 1000} วินาที)`);
-      }
-      
-      // Retry logic
-      if (retryCount < maxRetries && error.message.includes('fetch')) {
-        console.warn(`🔄 Retry ${retryCount + 1}/${maxRetries} for Ollama call`);
-        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
-        return callOllamaAPI(prompt, retryCount + 1);
-      }
-      
-      throw error;
-    }
-  };
+  const checkOllamaStatus = useCallback(async () => {
+    const status = await aiService.checkAvailability();
+    const info = aiService.getProviderInfo();
+    setModelInfo({
+      name: info.ollamaModel || 'N/A',
+      url: info.ollamaUrl,
+      timeout: aiService.timeout,
+      debug: aiService.debug,
+      availableModels: info.availableModels.map(m => m.name)
+    });
+    return status;
+  }, []);
 
   // Create system prompt for Thai Access Log context
   const createSystemPrompt = (userMessage) => {
@@ -158,26 +77,17 @@ export const useChat = () => {
 
   // Send message handler with Ollama integration
   const handleSendMessage = useCallback(async (messageContent) => {
-    // Validate input
-    if (!messageContent || typeof messageContent !== 'string') {
+    if (!messageContent || typeof messageContent !== 'string' || !messageContent.trim()) {
       setError('กรุณาใส่ข้อความที่ต้องการส่ง');
       return;
     }
 
-    const trimmedMessage = messageContent.trim();
-    if (!trimmedMessage) {
-      setError('กรุณาใส่ข้อความที่ต้องการส่ง');
-      return;
-    }
-
-    // Clear any previous errors
     setError(null);
 
-    // Add user message
     const userMessage = {
       id: Date.now(),
       type: 'user',
-      content: trimmedMessage,
+      content: messageContent.trim(),
       timestamp: new Date()
     };
 
@@ -185,48 +95,46 @@ export const useChat = () => {
     setIsLoading(true);
 
     try {
-      // Check Ollama status first
       const ollamaStatus = await checkOllamaStatus();
       
       if (!ollamaStatus.available) {
-        throw new Error(`ไม่สามารถเชื่อมต่อ Ollama ได้: ${ollamaStatus.error}\n\nกรุณาตรวจสอบว่า Ollama ทำงานอยู่ที่ ${ollamaUrl}`);
+        throw new Error(`ไม่สามารถเชื่อมต่อ Ollama ได้: ${ollamaStatus.error}\n\nกรุณาตรวจสอบว่า Ollama ทำงานอยู่ที่ ${modelInfo.url}`);
       }
       
-      if (!ollamaStatus.hasModel) {
-        throw new Error(`ไม่พบโมเดล "${ollamaModel}"\n\nโมเดลที่มีอยู่: ${ollamaStatus.availableModels.join(', ')}\n\nใช้คำสั่ง: ollama pull ${ollamaModel}`);
+      if (!modelInfo.name) {
+        throw new Error(`ไม่พบโมเดลที่เลือก\n\nกรุณาเลือกโมเดลจากรายการที่มีอยู่`);
       }
 
-      // Create system prompt
-      const systemPrompt = createSystemPrompt(trimmedMessage);
-      
-      // Call Ollama API
-      const aiResponse = await callOllamaAPI(systemPrompt);
+      if (!ollamaStatus.models.some(m => m.name === modelInfo.name)) {
+        throw new Error(`ไม่พบโมเดล "${modelInfo.name}"\n\nโมเดลที่มีอยู่: ${ollamaStatus.models.map(m => m.name).join(', ')}\n\nใช้คำสั่ง: ollama pull ${modelInfo.name}`);
+      }
 
-      // Add AI response
+      const systemPrompt = createSystemPrompt(userMessage.content);
+      const aiResponse = await aiService.generateResponse(systemPrompt);
+
       const aiMessage = {
         id: Date.now() + 1,
         type: 'ai',
         content: aiResponse,
         timestamp: new Date(),
-        model: ollamaModel
+        model: modelInfo.name
       };
 
       setMessages(prev => [...prev, aiMessage]);
 
-    } catch (error) {
-      console.error('❌ Ollama response error:', error);
+    } catch (err) {
+      console.error('❌ AI response error:', err);
       
-      // Add error message with helpful information
       const errorMessage = {
         id: Date.now() + 1,
         type: 'ai',
-        content: `❌ เกิดข้อผิดพลาด: ${error.message}
+        content: `❌ เกิดข้อผิดพลาด: ${err.message}
 
 🔧 วิธีแก้ไข:
 1. ตรวจสอบว่า Ollama ทำงานอยู่: \`ollama serve\`
 2. ตรวจสอบโมเดล: \`ollama list\`
-3. ติดตั้งโมเดลถ้าจำเป็น: \`ollama pull ${ollamaModel}\`
-4. ตรวจสอบ URL: ${ollamaUrl}
+3. ติดตั้งโมเดลถ้าจำเป็น: \`ollama pull ${modelInfo.name}\`
+4. ตรวจสอบ URL: ${modelInfo.url}
 
 💡 หรือเปลี่ยนไปใช้ Mock AI ชั่วคราวในไฟล์ .env:
 \`VITE_AI_PROVIDER=mock\``,
@@ -235,11 +143,11 @@ export const useChat = () => {
       };
 
       setMessages(prev => [...prev, errorMessage]);
-      setError('เกิดข้อผิดพลาดในการติดต่อ Ollama');
+      setError('เกิดข้อผิดพลาดในการติดต่อ AI Service');
     } finally {
       setIsLoading(false);
     }
-  }, [ollamaUrl, ollamaModel, ollamaTimeout, maxRetries, debugMode]);
+  }, [modelInfo]);
 
   // Clear messages
   const clearMessages = useCallback(() => {
@@ -250,16 +158,16 @@ export const useChat = () => {
         content: `สวัสดีครับ! ผมพร้อมช่วยวิเคราะห์ Access Log แล้ว 🤖
 
 🔧 **ข้อมูลระบบ:**
-- โมเดล: ${ollamaModel}
-- Ollama URL: ${ollamaUrl}
-- Debug Mode: ${debugMode ? 'เปิด' : 'ปิด'}
+- โมเดล: ${modelInfo.name}
+- Ollama URL: ${modelInfo.url}
+- Debug Mode: ${modelInfo.debug ? 'เปิด' : 'ปิด'}
 
 มีอะไรให้ช่วยไหมครับ?`,
         timestamp: new Date()
       }
     ]);
     setError(null);
-  }, [ollamaModel, ollamaUrl, debugMode]);
+  }, [modelInfo]);
 
   // Clear error
   const clearError = useCallback(() => {
@@ -271,29 +179,52 @@ export const useChat = () => {
     setIsLoading(true);
     try {
       const status = await checkOllamaStatus();
+      const info = aiService.getProviderInfo(); // Get latest info after check
       const testMessage = {
         id: Date.now(),
         type: 'ai',
         content: `🧪 **ผลการทดสอบ Ollama:**
 
 📡 **การเชื่อมต่อ:** ${status.available ? '✅ สำเร็จ' : '❌ ล้มเหลว'}
-🤖 **โมเดลเป้าหมาย:** ${ollamaModel}
-🎯 **โมเดลพร้อมใช้:** ${status.hasModel ? '✅ พร้อม' : '❌ ไม่พบ'}
+🤖 **โมเดลเป้าหมาย:** ${info.ollamaModel || 'ยังไม่ได้เลือก'}
+🎯 **โมเดลพร้อมใช้:** ${info.ollamaModel && info.availableModels.some(m => m.name === info.ollamaModel) ? '✅ พร้อม' : '❌ ไม่พบ'}
 
 📋 **โมเดลที่มีในระบบ:**
-${status.availableModels ? status.availableModels.map(model => `• ${model}`).join('\n') : 'ไม่มีข้อมูล'}
+${info.availableModels.length > 0 ? info.availableModels.map(model => `• ${model.name}`).join('\n') : 'ไม่มีข้อมูล'}
 
-${!status.available ? `\n❗ **คำแนะนำ:**\n1. เริ่มต้น Ollama: \`ollama serve\`\n2. ตรวจสอบ URL: ${ollamaUrl}` : ''}
-${status.available && !status.hasModel ? `\n❗ **ติดตั้งโมเดล:** \`ollama pull ${ollamaModel}\`` : ''}`,
+${!status.available ? `\n❗ **คำแนะนำ:**\n1. เริ่มต้น Ollama: \`ollama serve\`\n2. ตรวจสอบ URL: ${info.ollamaUrl}` : ''}
+${status.available && info.ollamaModel && !info.availableModels.some(m => m.name === info.ollamaModel) ? `\n❗ **ติดตั้งโมเดล:** \`ollama pull ${info.ollamaModel}\`` : ''}`,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, testMessage]);
-    } catch (error) {
-      console.error('Connection test failed:', error);
+    } catch (err) {
+      console.error('Connection test failed:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [ollamaUrl, ollamaModel]);
+  }, [checkOllamaStatus]);
+
+  // Function to set the Ollama model
+  const setOllamaModel = useCallback(async (modelName) => {
+    const success = aiService.setOllamaModel(modelName);
+    if (success) {
+      await checkOllamaStatus(); // Re-check status to update modelInfo
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        type: 'ai',
+        content: `✅ เปลี่ยนโมเดลเป็น **${modelName}** เรียบร้อยแล้ว`,
+        timestamp: new Date()
+      }]);
+    } else {
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        type: 'ai',
+        content: `❌ ไม่สามารถเปลี่ยนโมเดลเป็น **${modelName}** ได้`,
+        timestamp: new Date(),
+        isError: true
+      }]);
+    }
+  }, [checkOllamaStatus]);
 
   return {
     messages,
@@ -303,12 +234,8 @@ ${status.available && !status.hasModel ? `\n❗ **ติดตั้งโมเ
     clearMessages,
     clearError,
     testOllamaConnection,
+    setOllamaModel, // Expose the new function
     aiProvider: 'ollama',
-    modelInfo: {
-      name: ollamaModel,
-      url: ollamaUrl,
-      timeout: ollamaTimeout,
-      debug: debugMode
-    }
+    modelInfo // Return the stateful modelInfo
   };
 };

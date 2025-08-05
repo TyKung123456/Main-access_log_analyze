@@ -3,8 +3,9 @@ class AIService {
   constructor() {
     this.provider = import.meta.env.VITE_AI_PROVIDER || 'mock';
     this.debug = import.meta.env.VITE_DEBUG_AI === 'true';
-    this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
-    this.ollamaModel = import.meta.env.VITE_OLLAMA_MODEL || 'qwen3:0.6b';
+    this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:8080'; // Changed to 8080 as requested
+    this.ollamaModel = import.meta.env.VITE_OLLAMA_MODEL; // Will be set dynamically
+    this.availableModels = []; // To store models fetched from Ollama
     this.timeout = 30000;
     this.isAvailable = null;
     
@@ -15,7 +16,8 @@ class AIService {
 
   async checkAvailability() {
     if (this.provider === 'mock') {
-      return { available: true, provider: 'mock' };
+      this.isAvailable = { available: true, provider: 'mock' };
+      return this.isAvailable;
     }
 
     if (this.provider === 'local') {
@@ -27,23 +29,37 @@ class AIService {
         
         if (response.ok) {
           const data = await response.json();
-          const hasModel = data.models?.some(model => 
-            model.name.includes(this.ollamaModel.split(':')[0])
-          );
-          return { available: hasModel, provider: 'ollama', models: data.models || [] };
+          this.availableModels = data.models || [];
+          
+          // Set default model if VITE_OLLAMA_MODEL is not set or not found
+          if (!this.ollamaModel || !this.availableModels.some(model => model.name === this.ollamaModel)) {
+            this.ollamaModel = this.availableModels.length > 0 ? this.availableModels[0].name : null;
+          }
+
+          const hasModel = this.ollamaModel && this.availableModels.some(model => model.name === this.ollamaModel);
+          this.isAvailable = { available: hasModel, provider: 'ollama', models: this.availableModels };
+          return this.isAvailable;
         }
-        return { available: false, error: `HTTP ${response.status}` };
+        this.isAvailable = { available: false, error: `HTTP ${response.status}` };
+        return this.isAvailable;
       } catch (error) {
-        return { available: false, error: error.message };
+        this.isAvailable = { available: false, error: error.message };
+        return this.isAvailable;
       }
     }
 
-    return { available: false, error: 'Unknown provider' };
+    this.isAvailable = { available: false, error: 'Unknown provider' };
+    return this.isAvailable;
   }
 
   async generateResponse(userMessage, context = {}) {
     if (this.debug) {
       console.log('[AI Service] Generating response for:', userMessage.substring(0, 50) + '...');
+    }
+
+    if (!this.isAvailable || !this.isAvailable.available) {
+      console.warn('[AI Service] AI service not available, using mock response.');
+      return this.getMockResponse(userMessage, context);
     }
 
     try {
@@ -60,6 +76,11 @@ class AIService {
   }
 
   async generateOllamaResponse(userMessage, context) {
+    if (!this.ollamaModel) {
+      console.warn('[AI Service] No Ollama model selected or available, using mock response.');
+      return this.getMockResponse(userMessage, context);
+    }
+
     const prompt = this.buildPrompt(userMessage, context);
     
     try {
@@ -239,8 +260,22 @@ class AIService {
       provider: this.provider,
       isAvailable: this.isAvailable,
       ollamaUrl: this.ollamaUrl,
-      ollamaModel: this.ollamaModel
+      ollamaModel: this.ollamaModel,
+      availableModels: this.availableModels // Expose available models
     };
+  }
+
+  // New method to set the Ollama model dynamically
+  setOllamaModel(modelName) {
+    if (this.availableModels.some(model => model.name === modelName)) {
+      this.ollamaModel = modelName;
+      if (this.debug) {
+        console.log(`[AI Service] Ollama model set to: ${modelName}`);
+      }
+      return true;
+    }
+    console.warn(`[AI Service] Model "${modelName}" not found in available models.`);
+    return false;
   }
 }
 
