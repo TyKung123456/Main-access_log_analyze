@@ -1,11 +1,9 @@
 // components/Dashboard/RecentAccessTable.jsx
 import React from 'react';
 
-const RecentAccessTable = ({ data }) => {
-  // เอา 5 รายการสุดท้ายโดยไม่กรอง null ภายในแต่ละฟิลด์
-  const filteredData = data
-    .filter(item => item !== null && item !== undefined)
-    .slice(-5);
+const RecentAccessTable = ({ data, onRowClick }) => {
+  // Filter out null/undefined items
+  const filteredData = data.filter(item => item !== null && item !== undefined);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
@@ -29,7 +27,11 @@ const RecentAccessTable = ({ data }) => {
               </tr>
             )}
             {filteredData.map((item, index) => (
-              <tr key={index}>
+              <tr
+                key={index}
+                className="cursor-pointer hover:bg-gray-100"
+                onClick={() => onRowClick && onRowClick(item)}
+              >
                 <td className="px-4 py-2 text-sm text-gray-900">
                   {item.dateTime ? new Date(item.dateTime).toLocaleString('th-TH') : <span className="italic text-gray-400">ไม่ระบุเวลา</span>}
                 </td>

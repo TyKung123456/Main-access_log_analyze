@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import SecurityAlerts from '../components/Security/SecurityAlerts';
 import DeniedReasonsChart from '../components/Analytics/Charts/DeniedReasonsChart';
 import StatsCards from '../components/Dashboard/StatsCards';
 import DataFilters from '../components/Dashboard/DataFilters';
@@ -41,6 +40,9 @@ const CombinedDashboardAnalyticsPage = ({
   const [activeView, setActiveView] = useState('dashboard-overview'); // Default to dashboard overview
   const [securityMetrics, setSecurityMetrics] = useState(null);
   const [isLoadingSecurityMetrics, setIsLoadingSecurityMetrics] = useState(true);
+  const [selectedLog, setSelectedLog] = useState(null); // State to store selected log for details
+
+  const deniedLogData = logData.filter(log => log.status === 'denied' || log.accessResult === 'DENIED');
 
   // Auto refresh every 30 seconds for real data (from DashboardPage)
   useEffect(() => {
@@ -349,7 +351,6 @@ const CombinedDashboardAnalyticsPage = ({
             </h3>
           </div>
           <div className="p-6">
-            <SecurityAlerts logData={logData} />
           </div>
         </div>
         <SecurityDashboard logData={logData} /> {/* Full security dashboard */}
@@ -358,11 +359,19 @@ const CombinedDashboardAnalyticsPage = ({
   };
 
   const renderRecentAccess = () => (
-    <RecentAccessTable
-      data={filteredData.slice(0, 10)}
-      loading={loading}
-      onRefresh={handleRefresh}
-    />
+    <div className="space-y-6">
+      <div className="bg-gray-50 rounded-lg p-4">
+        <p className="text-sm text-gray-600">จำนวนรายการที่ถูกปฏิเสธ</p>
+        <p className="text-lg font-semibold text-red-600">
+          {deniedLogData.length.toLocaleString('th-TH')}
+        </p>
+      </div>
+      <RecentAccessTable
+        data={deniedLogData} // Pass only denied data
+        loading={loading}
+        onRowClick={setSelectedLog} // Handle row click
+      />
+    </div>
   );
 
   const renderContent = () => {
@@ -482,6 +491,42 @@ const CombinedDashboardAnalyticsPage = ({
       <main role="tabpanel" aria-labelledby={`tab-${activeView}`}>
         {renderContent()}
       </main>
+
+      {/* Log Detail Modal */}
+      {selectedLog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 border-b pb-3">
+              <h2 className="text-xl font-bold text-slate-800">รายละเอียดบันทึกการเข้าถึง</h2>
+              <button
+                onClick={() => setSelectedLog(null)}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-3 text-sm text-slate-700">
+              <p><strong>เวลา:</strong> {selectedLog.dateTime ? new Date(selectedLog.dateTime).toLocaleString('th-TH') : 'ไม่ระบุ'}</p>
+              <p><strong>ผู้ใช้:</strong> {selectedLog.cardName || 'ไม่ระบุ'}</p>
+              <p><strong>สถานที่:</strong> {selectedLog.location || 'ไม่ระบุ'}</p>
+              <p><strong>สถานะ:</strong> {selectedLog.allow === true ? 'สำเร็จ' : selectedLog.allow === false ? 'ถูกปฏิเสธ' : 'ไม่ทราบผล'}</p>
+              <p><strong>ผลลัพธ์การเข้าถึง:</strong> {selectedLog.accessResult || 'ไม่ระบุ'}</p>
+              <p><strong>เหตุผลการปฏิเสธ:</strong> {selectedLog.deniedReason || 'ไม่มี'}</p>
+              <p><strong>IP Address:</strong> {selectedLog.ipAddress || 'ไม่ระบุ'}</p>
+              <p><strong>User Agent:</strong> {selectedLog.userAgent || 'ไม่ระบุ'}</p>
+              <p><strong>ประเภทอุปกรณ์:</strong> {selectedLog.deviceType || 'ไม่ระบุ'}</p>
+              <p><strong>ระบบปฏิบัติการ:</strong> {selectedLog.os || 'ไม่ระบุ'}</p>
+              <p><strong>เบราว์เซอร์:</strong> {selectedLog.browser || 'ไม่ระบุ'}</p>
+              <p><strong>ภูมิภาค:</strong> {selectedLog.region || 'ไม่ระบุ'}</p>
+              <p><strong>ประเทศ:</strong> {selectedLog.country || 'ไม่ระระบุ'}</p>
+              <p><strong>ละติจูด:</strong> {selectedLog.latitude || 'ไม่ระบุ'}</p>
+              <p><strong>ลองจิจูด:</strong> {selectedLog.longitude || 'ไม่ระบุ'}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer Info */}
       <footer className="text-center text-sm text-slate-400 pt-4">
