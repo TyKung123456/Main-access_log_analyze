@@ -63,9 +63,9 @@ const detectMultipleFailedAttempts = async () => {
       AND CAST("Date Time" AS TIMESTAMP) >= NOW() - INTERVAL '24 hours'
       AND "Card Name" IS NOT NULL
     GROUP BY "Card Name", "Card Number Hash", "User Type", "Location"
-    HAVING COUNT(*) >= 3
+    HAVING COUNT(*) >= 2 -- ลดเกณฑ์การตรวจจับเพื่อรวมเหตุการณ์มากขึ้น
     ORDER BY failedAttempts DESC, timeSpanMinutes ASC
-    LIMIT 50
+    LIMIT 100 -- เพิ่ม limit เพื่อดึงข้อมูลมากขึ้น
   `;
 
   const result = await query(sqlQuery);
@@ -83,8 +83,8 @@ const detectMultipleFailedAttempts = async () => {
       firstAttempt: row.firstattempt,
       lastAttempt: row.lastattempt,
       timeSpanMinutes: parseFloat(row.timespanminutes),
-      riskLevel: parseInt(row.failedattempts) >= 10 ? 'high' :
-        parseInt(row.failedattempts) >= 5 ? 'medium' : 'low',
+      riskLevel: parseInt(row.failedattempts) >= 5 ? 'high' : // ปรับเกณฑ์ความเสี่ยง
+        parseInt(row.failedattempts) >= 2 ? 'medium' : 'low',
       description: `${row.cardname} พยายามเข้าถึง ${row.location} ล้มเหลว ${row.failedattempts} ครั้ง`
     }))
   };
@@ -111,11 +111,11 @@ const detectUnusualTimeAccess = async () => {
         -- หรือวันหยุดสุดสัปดาห์
         OR EXTRACT(dow FROM CAST("Date Time" AS TIMESTAMP)) IN (0, 6)
       )
-      AND CAST("Date Time" AS TIMESTAMP) >= NOW() - INTERVAL '7 days'
+      AND CAST("Date Time" AS TIMESTAMP) >= NOW() - INTERVAL '30 days' -- เพิ่มช่วงเวลาเป็น 30 วัน
       AND "Card Name" IS NOT NULL
       AND "User Type" != 'SECURITY' -- ยกเว้นเจ้าหน้าที่รักษาความปลอดภัย
     ORDER BY "Date Time" DESC
-    LIMIT 100
+    LIMIT 500 -- เพิ่ม limit เพื่อดึงข้อมูลมากขึ้น
   `;
 
   const result = await query(sqlQuery);
@@ -267,17 +267,17 @@ const detectLocationAnomalies = async () => {
     )
     SELECT *
     FROM location_stats
-    WHERE denialRate >= 20
-       OR totalAccess >= 1000
+    WHERE denialRate >= 10 -- ลดเกณฑ์อัตราปฏิเสธ
+       OR totalAccess >= 500 -- ลดเกณฑ์ totalAccess
     ORDER BY denialRate DESC, totalAccess DESC
-    LIMIT 20
+    LIMIT 50 -- เพิ่ม limit เพื่อดึงข้อมูลมากขึ้น
   `;
 
   const result = await query(sqlQuery);
 
   return {
     type: 'locationAnomalies',
-    title: 'ความผิดปกติตามสถานที่',
+    title: 'สถานที่เสี่ยง',
     description: 'ตรวจจับสถานที่ที่มีอัตราปฏิเสธสูงหรือการเข้าถึงผิดปกติ',
     data: result.rows.map(row => ({
       location: row.location,
@@ -285,9 +285,9 @@ const detectLocationAnomalies = async () => {
       deniedAccess: parseInt(row.deniedaccess),
       uniqueUsers: parseInt(row.uniqueusers),
       denialRate: parseFloat(row.denialrate),
-      riskLevel: parseFloat(row.denialrate) >= 50 ? 'high' :
-        parseFloat(row.denialrate) >= 30 ? 'medium' : 'low',
-      description: `${row.location}: ${row.denialrate}% ปฏิเสธ, ${row.totalaccess} ครั้งรวม, ${row.uniqueusers} คนใช้`
+      riskLevel: parseFloat(row.denialrate) >= 30 ? 'high' : // ปรับเกณฑ์ความเสี่ยง
+        parseFloat(row.denialrate) >= 10 ? 'medium' : 'low',
+      description: `${row.location}: ${row.denialrate}% ปฏิเสธ, ${row.totalaccess} ครั้งรวม, ${row.uniqueUsers} คนใช้`
     }))
   };
 };
@@ -335,7 +335,7 @@ const detectFrequencyAnomalies = async () => {
   };
 };
 
-// 7. 🔐 การเข้าถึงโดยไม่ได้รับอนุญาต
+// 7. 🔐 การเข้าถึงโดยไม่ได้รับอนุญาต (Access Denied)
 const detectUnauthorizedAccess = async () => {
   const sqlQuery = `
     SELECT
@@ -347,25 +347,20 @@ const detectUnauthorizedAccess = async () => {
       "Permission" as permission,
       "Reason" as reason
     FROM "public"."real_log_analyze"
-    WHERE "Allow" = 't'
+    WHERE "Allow" = 'f' -- เน้นเฉพาะการเข้าถึงที่ถูกปฏิเสธ
       AND "Date Time" IS NOT NULL AND "Date Time" != ''
-      AND CAST("Date Time" AS TIMESTAMP) >= NOW() - INTERVAL '24 hours'
-      AND (
-        "Permission" ILIKE '%DENIED%'
-        OR "Permission" ILIKE '%RESTRICTED%'
-        OR ("User Type" = 'VISITOR' AND EXTRACT(hour FROM CAST("Date Time" AS TIMESTAMP)) NOT BETWEEN 8 AND 18)
-      )
+      AND CAST("Date Time" AS TIMESTAMP) >= NOW() - INTERVAL '30 days' -- เพิ่มช่วงเวลาเป็น 30 วัน
       AND "Card Name" IS NOT NULL
     ORDER BY "Date Time" DESC
-    LIMIT 50
+    LIMIT 1000 -- เพิ่ม limit เพื่อดึงข้อมูลมากขึ้น
   `;
 
   const result = await query(sqlQuery);
 
   return {
     type: 'unauthorizedAccess',
-    title: 'การเข้าถึงที่อาจไม่ได้รับอนุญาต',
-    description: 'ตรวจจับการเข้าถึงที่อาจฝ่าฝืนกฎระเบียบ',
+    title: 'การเข้าถึงที่ถูกปฏิเสธ',
+    description: 'ตรวจจับการเข้าถึงที่ถูกปฏิเสธทั้งหมด',
     data: result.rows.map(row => ({
       cardName: row.cardname,
       cardNumber: row.cardnumber,
@@ -374,8 +369,8 @@ const detectUnauthorizedAccess = async () => {
       userType: row.usertype,
       permission: row.permission,
       reason: row.reason,
-      riskLevel: row.permission && row.permission.includes('DENIED') ? 'high' : 'medium',
-      description: `${row.cardname} (${row.usertype}) เข้าถึง ${row.location} - สิทธิ์: ${row.permission}`
+      riskLevel: row.reason && row.reason.includes('INVALID') ? 'high' : 'medium', // ปรับเกณฑ์ความเสี่ยง
+      description: `${row.cardname} พยายามเข้าถึง ${row.location} แต่ถูกปฏิเสธ: ${row.reason}`
     }))
   };
 };
@@ -428,49 +423,6 @@ const detectDormantCardActivity = async () => {
   };
 };
 
-// GET /api/security/alerts/realtime - การแจ้งเตือนแบบเรียลไทม์
-router.get('/alerts/realtime', async (req, res) => {
-  try {
-    const realtimeQuery = `
-      SELECT
-        "Card Name" as cardName,
-        "Location" as location,
-        "Date Time" as accessTime,
-        "Allow" as allowed,
-        "Reason" as reason,
-        "User Type" as userType
-      FROM "public"."real_log_analyze"
-      WHERE "Date Time" IS NOT NULL AND "Date Time" != ''
-        AND CAST("Date Time" AS TIMESTAMP) >= NOW() - INTERVAL '1 hour'
-        AND (
-          "Allow" = 'f'
-          OR EXTRACT(hour FROM CAST("Date Time" AS TIMESTAMP)) NOT BETWEEN 6 AND 22
-        )
-      ORDER BY "Date Time" DESC
-      LIMIT 20
-    `;
-
-    const result = await query(realtimeQuery);
-
-    res.json({
-      alerts: result.rows.map(row => ({
-        cardName: row.cardname,
-        location: row.location,
-        accessTime: row.accesstime,
-        allowed: row.allowed,
-        reason: row.reason,
-        userType: row.usertype,
-        alertType: row.allowed === 'f' ? 'ACCESS_DENIED' : 'UNUSUAL_TIME',
-        severity: row.allowed === 'f' ? 'high' : 'medium'
-      })),
-      generatedAt: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('❌ Realtime alerts error:', error);
-    res.status(500).json({ error: 'Failed to fetch realtime alerts' });
-  }
-});
 
 // POST /api/security/risk-analysis - สำหรับรัน SQL Query วิเคราะห์ความเสี่ยงแต่ละหมวดหมู่
 router.post('/risk-analysis', async (req, res) => {

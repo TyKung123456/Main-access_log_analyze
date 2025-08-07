@@ -2,8 +2,8 @@
 import React from 'react';
 
 const RecentAccessTable = ({ data, onRowClick }) => {
-  // Filter out null/undefined items
-  const filteredData = data.filter(item => item !== null && item !== undefined);
+  // Filter out null/undefined items and limit to 10 items
+  const filteredData = data.filter(item => item !== null && item !== undefined).slice(0, 10);
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">

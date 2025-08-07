@@ -35,16 +35,134 @@ const CombinedDashboardAnalyticsPage = ({
   refreshData,
   useRealData,
   uploadStats,
-  systemStatus
+  systemStatus,
+  onRowClick // Receive onRowClick prop
 }) => {
   const [activeView, setActiveView] = useState('dashboard-overview'); // Default to dashboard overview
   const [securityMetrics, setSecurityMetrics] = useState(null);
   const [isLoadingSecurityMetrics, setIsLoadingSecurityMetrics] = useState(true);
-  const [selectedLog, setSelectedLog] = useState(null); // State to store selected log for details
+  const [selectedSecurityKPI, setSelectedSecurityKPI] = useState('all'); // State for security dashboard KPI filtering
 
-  const deniedLogData = logData.filter(log => log.status === 'denied' || log.accessResult === 'DENIED');
+  // Filtered data for RecentAccessTable based on selectedSecurityKPI
+  const filteredSecurityAlerts = React.useMemo(() => {
+    // This logic should ideally mirror the filtering in SecurityDashboard
+    // to ensure consistency when a KPI card is clicked.
+    // For now, we'll pass the full logData and let SecurityDashboard handle its internal filtering.
+    // However, if the user clicks a KPI card, we need to apply that filter here for the table.
+    if (selectedSecurityKPI === 'all') {
+      return logData; // Or a subset like deniedLogData if that's the default for the table
+    }
 
-  // Auto refresh every 30 seconds for real data (from DashboardPage)
+    // Replicate the filtering logic from SecurityDashboard.jsx
+    const generatedAlerts = [];
+    let alertId = 1;
+
+    const deniedLogs = logData.filter(log => log.allow === false || log.allow === 0);
+    deniedLogs.forEach(log => {
+      generatedAlerts.push({
+        id: alertId++,
+        alertType: 'ACCESS_DENIED',
+        severity: log.reason && log.reason.includes('INVALID') ? 'high' : 'medium',
+        cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
+        location: log.location || log.door || 'ไม่ระบุ',
+        accessTime: log.dateTime,
+        reason: log.reason || 'การเข้าถึงถูกปฏิเสธ',
+        userType: log.userType || 'ไม่ระบุ'
+      });
+    });
+
+    const allowedLogs = logData.filter(log => (log.allow === true || log.allow === 1) && log.dateTime);
+    allowedLogs.forEach(log => {
+      try {
+        const accessDate = new Date(log.dateTime);
+        if (accessDate && !isNaN(accessDate.getTime())) {
+          const hour = accessDate.getHours();
+          const dayOfWeek = accessDate.getDay();
+
+          if ((hour >= 22 || hour <= 6) || (dayOfWeek === 0 || dayOfWeek === 6)) {
+            if (log.userType !== 'SECURITY' && log.userType !== 'security') {
+              generatedAlerts.push({
+                id: alertId++,
+                alertType: 'UNUSUAL_TIME',
+                severity: (hour >= 23 || hour <= 5) ? 'high' : 'medium',
+                cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
+                location: log.location || log.door || 'ไม่ระบุ',
+                accessTime: log.dateTime,
+                reason: `เข้าถึงนอกเวลา (${hour.toString().padStart(2, '0')}:00) ${dayOfWeek === 0 ? '(วันอาทิตย์)' : dayOfWeek === 6 ? '(วันเสาร์)' : ''}`,
+                userType: log.userType || 'ไม่ระบุ'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Invalid date format:', log.dateTime);
+      }
+    });
+
+    const failedAttempts = {};
+    deniedLogs.forEach(log => {
+      const key = `${log.cardName || log.cardNumber || 'Unknown'}_${log.location || log.door || 'Unknown'}`;
+      if (!failedAttempts[key]) {
+        failedAttempts[key] = [];
+      }
+      failedAttempts[key].push(log);
+    });
+
+    Object.entries(failedAttempts).forEach(([key, attempts]) => {
+      if (attempts.length >= 2) {
+        const latest = attempts[attempts.length - 1];
+        generatedAlerts.push({
+          id: alertId++,
+          alertType: 'MULTIPLE_ATTEMPTS',
+          severity: attempts.length >= 3 ? 'high' : 'medium',
+          cardName: latest.cardName || latest.cardNumber || 'ไม่ระบุ',
+          location: latest.location || latest.door || 'ไม่ระบุ',
+          accessTime: latest.dateTime,
+          reason: `พยายามเข้าถึงล้มเหลว ${attempts.length} ครั้ง`,
+          userType: latest.userType || 'ไม่ระระบุ'
+        });
+      }
+    });
+
+    generatedAlerts.sort((a, b) => {
+      const dateA = new Date(a.accessTime);
+      const dateB = new Date(b.accessTime);
+      return dateB - dateA;
+    });
+
+    switch (selectedSecurityKPI) {
+      case 'high':
+        return generatedAlerts.filter(alert => alert.severity === 'high');
+      case 'medium':
+        return generatedAlerts.filter(alert => alert.severity === 'medium');
+      case 'low':
+        return generatedAlerts.filter(alert => alert.severity === 'low');
+      case 'access_denied':
+        return generatedAlerts.filter(alert => alert.alertType === 'ACCESS_DENIED');
+      case 'unusual_time':
+        return generatedAlerts.filter(alert => alert.alertType === 'UNUSUAL_TIME');
+      case 'multiple_attempts':
+        return generatedAlerts.filter(alert => alert.alertType === 'MULTIPLE_ATTEMPTS');
+      case 'risk_locations':
+        return generatedAlerts.filter(alert => alert.location && alert.location !== 'ไม่ระบุ');
+      case 'suspicious_users':
+        return generatedAlerts.filter(alert => alert.cardName && alert.cardName !== 'ไม่ระบุ');
+      case 'today_events':
+        const today = new Date().toDateString();
+        return generatedAlerts.filter(alert => new Date(alert.accessTime).toDateString() === today);
+      case 'compliance':
+        return generatedAlerts.filter(alert => alert.severity !== 'high');
+      default:
+        return generatedAlerts;
+    }
+  }, [logData, selectedSecurityKPI]);
+
+  const handleSecurityKPIClick = (type) => {
+    setSelectedSecurityKPI(type);
+    setActiveView('recent-access'); // Switch to recent access table when a KPI is clicked
+  };
+
+  // Auto refresh every 30 seconds for real data
   useEffect(() => {
     if (useRealData) {
       const interval = setInterval(() => {
@@ -343,17 +461,15 @@ const CombinedDashboardAnalyticsPage = ({
         {/* Recent Alerts Preview */}
         <div className="bg-gradient-to-b from-white to-slate-50/50 rounded-2xl shadow-sm border border-slate-100">
           <div className="px-6 py-4 border-b border-slate-200">
-            <h3 className="text-lg font-semibold flex items-center gap-3">
-              <span className="flex items-center justify-center h-10 w-10 bg-orange-100 text-orange-600 rounded-lg">
-                🚨
-              </span>
-              การแจ้งเตือนล่าสุด
-            </h3>
           </div>
           <div className="p-6">
           </div>
         </div>
-        <SecurityDashboard logData={logData} /> {/* Full security dashboard */}
+        <SecurityDashboard
+          logData={logData}
+          onKPIClick={handleSecurityKPIClick}
+          selectedKPI={selectedSecurityKPI}
+        />
       </div>
     );
   };
@@ -361,15 +477,15 @@ const CombinedDashboardAnalyticsPage = ({
   const renderRecentAccess = () => (
     <div className="space-y-6">
       <div className="bg-gray-50 rounded-lg p-4">
-        <p className="text-sm text-gray-600">จำนวนรายการที่ถูกปฏิเสธ</p>
-        <p className="text-lg font-semibold text-red-600">
-          {deniedLogData.length.toLocaleString('th-TH')}
+        <p className="text-sm text-gray-600">จำนวนรายการที่แสดง</p>
+        <p className="text-lg font-semibold text-blue-600">
+          {filteredSecurityAlerts.length.toLocaleString('th-TH')}
         </p>
       </div>
       <RecentAccessTable
-        data={deniedLogData} // Pass only denied data
+        data={filteredSecurityAlerts}
         loading={loading}
-        onRowClick={setSelectedLog} // Handle row click
+        onRowClick={onRowClick} // Pass the onRowClick prop down
       />
     </div>
   );
@@ -491,42 +607,6 @@ const CombinedDashboardAnalyticsPage = ({
       <main role="tabpanel" aria-labelledby={`tab-${activeView}`}>
         {renderContent()}
       </main>
-
-      {/* Log Detail Modal */}
-      {selectedLog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4 border-b pb-3">
-              <h2 className="text-xl font-bold text-slate-800">รายละเอียดบันทึกการเข้าถึง</h2>
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="text-slate-500 hover:text-slate-700"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="space-y-3 text-sm text-slate-700">
-              <p><strong>เวลา:</strong> {selectedLog.dateTime ? new Date(selectedLog.dateTime).toLocaleString('th-TH') : 'ไม่ระบุ'}</p>
-              <p><strong>ผู้ใช้:</strong> {selectedLog.cardName || 'ไม่ระบุ'}</p>
-              <p><strong>สถานที่:</strong> {selectedLog.location || 'ไม่ระบุ'}</p>
-              <p><strong>สถานะ:</strong> {selectedLog.allow === true ? 'สำเร็จ' : selectedLog.allow === false ? 'ถูกปฏิเสธ' : 'ไม่ทราบผล'}</p>
-              <p><strong>ผลลัพธ์การเข้าถึง:</strong> {selectedLog.accessResult || 'ไม่ระบุ'}</p>
-              <p><strong>เหตุผลการปฏิเสธ:</strong> {selectedLog.deniedReason || 'ไม่มี'}</p>
-              <p><strong>IP Address:</strong> {selectedLog.ipAddress || 'ไม่ระบุ'}</p>
-              <p><strong>User Agent:</strong> {selectedLog.userAgent || 'ไม่ระบุ'}</p>
-              <p><strong>ประเภทอุปกรณ์:</strong> {selectedLog.deviceType || 'ไม่ระบุ'}</p>
-              <p><strong>ระบบปฏิบัติการ:</strong> {selectedLog.os || 'ไม่ระบุ'}</p>
-              <p><strong>เบราว์เซอร์:</strong> {selectedLog.browser || 'ไม่ระบุ'}</p>
-              <p><strong>ภูมิภาค:</strong> {selectedLog.region || 'ไม่ระบุ'}</p>
-              <p><strong>ประเทศ:</strong> {selectedLog.country || 'ไม่ระระบุ'}</p>
-              <p><strong>ละติจูด:</strong> {selectedLog.latitude || 'ไม่ระบุ'}</p>
-              <p><strong>ลองจิจูด:</strong> {selectedLog.longitude || 'ไม่ระบุ'}</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Footer Info */}
       <footer className="text-center text-sm text-slate-400 pt-4">

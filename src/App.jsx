@@ -10,6 +10,7 @@ import { useLogData } from './hooks/useLogData.js';
 import { useFilters } from './hooks/useFilters.js';
 import { useChat } from './hooks/useChat.js';
 import { useUpload } from './hooks/useUpload.js';
+import LogDetailModal from './components/Dashboard/LogDetailModal.jsx'; // Import the new modal component
 
 const AccessLogAnalyzer = () => {
   const [activeTab, setActiveTab] = useState('upload');
@@ -20,6 +21,7 @@ const AccessLogAnalyzer = () => {
     database: 'checking',
     upload: 'checking'
   });
+  const [selectedLogEntry, setSelectedLogEntry] = useState(null); // New state for selected log entry
 
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
@@ -45,6 +47,16 @@ const AccessLogAnalyzer = () => {
   const uploadSuccessRate = uploadResult?.statistics
     ? ((uploadResult.statistics.validRows / uploadResult.statistics.totalRows) * 100).toFixed(1)
     : null;
+
+  // Handler for row click in RecentAccessTable
+  const handleRowClick = (logEntry) => {
+    setSelectedLogEntry(logEntry);
+  };
+
+  // Close modal handler
+  const handleCloseModal = () => {
+    setSelectedLogEntry(null);
+  };
 
   // System health check
   useEffect(() => {
@@ -331,6 +343,7 @@ ${chatMessages.length > 0 ?
               useRealData={true} // Assuming this is always true for real data
               uploadStats={uploadStats}
               systemStatus={systemStatus}
+              onRowClick={handleRowClick} // Pass the new handler
             />
           );
 
@@ -464,6 +477,14 @@ ${chatMessages.length > 0 ?
           {renderContent()}
         </main>
       </div>
+
+      {/* Log Detail Modal */}
+      {selectedLogEntry && (
+        <LogDetailModal
+          logEntry={selectedLogEntry}
+          onClose={handleCloseModal}
+        />
+      )}
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-8">

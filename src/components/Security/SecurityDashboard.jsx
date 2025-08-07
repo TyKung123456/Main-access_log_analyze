@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, Clock, Shield, MapPin, Activity, RefreshCw, CheckCircle2, Download, Search, Filter, TrendingUp, Eye, ChevronDown, ChevronUp, Bell, Users, Calendar, BarChart3, Target, Building2, X } from 'lucide-react';
+import { AlertTriangle, Clock, Shield, MapPin, Activity, RefreshCw, Download, Search, Filter, TrendingUp, Eye, Building2, X, BarChart3, Users, Calendar } from 'lucide-react';
 
 // Helper functions
 const getSeverityDetails = (severity) => {
@@ -20,7 +20,7 @@ const getAlertDetails = (alertType) => {
     PERMISSION_MISMATCH: { icon: AlertTriangle, name: 'สิทธิ์ไม่ตรงกัน' },
     SUSPICIOUS_ACTIVITY: { icon: Eye, name: 'พฤติกรรมน่าสงสัย' }
   };
-  return types[alertType] || { icon: Bell, name: 'การแจ้งเตือนทั่วไป' };
+  return types[alertType] || { icon: AlertTriangle, name: 'การแจ้งเตือนทั่วไป' };
 };
 
 // KPI Card Component - Interactive
@@ -182,82 +182,103 @@ const RiskMatrix = ({ alerts, onLocationClick, onSeverityClick, selectedSeverity
   );
 };
 
-// Suspicious Activity Summary Component
-const SuspiciousActivitySummary = ({ alerts }) => {
-  const suspiciousStats = useMemo(() => {
-    const stats = {
+// Suspicious Activity Summary Component - Interactive
+const SuspiciousActivitySummary = ({ alerts, logData, onKPIClick, selectedKPI }) => {
+  const suspiciousMetrics = useMemo(() => {
+    // คำนวณจากข้อมูลจริงที่ส่งมา
+    const accessDenied = alerts.filter(alert => alert.alertType === 'ACCESS_DENIED').length;
+    const unusualTime = alerts.filter(alert => alert.alertType === 'UNUSUAL_TIME').length;
+    const multipleAttempts = alerts.filter(alert => alert.alertType === 'MULTIPLE_ATTEMPTS').length;
+    const highRiskEvents = alerts.filter(alert => alert.severity === 'high').length;
+
+    // คำนวณสถานที่เสี่ยง
+    const riskLocations = [...new Set(alerts.map(alert => alert.location))].length;
+
+    // คำนวณผู้ใช้ต้องสงสัย
+    const suspiciousUsers = [...new Set(alerts.map(alert => alert.cardName))].length;
+
+    // เหตุการณ์วันนี้
+    const today = new Date().toDateString();
+    const todayEvents = alerts.filter(alert => {
+      return new Date(alert.accessTime).toDateString() === today;
+    }).length;
+
+    return {
       totalSuspicious: alerts.length,
-      accessDenied: alerts.filter(a => a.alertType === 'ACCESS_DENIED').length,
-      unusualTime: alerts.filter(a => a.alertType === 'UNUSUAL_TIME').length,
-      multipleAttempts: alerts.filter(a => a.alertType === 'MULTIPLE_ATTEMPTS').length,
-      highRisk: alerts.filter(a => a.severity === 'high').length,
-      uniqueLocations: [...new Set(alerts.map(a => a.location))].length,
-      uniqueUsers: [...new Set(alerts.map(a => a.cardName))].length,
-      todayCount: alerts.filter(a => {
-        const today = new Date();
-        const alertDate = new Date(a.accessTime);
-        return alertDate.toDateString() === today.toDateString();
-      }).length
+      accessDenied,
+      unusualTime,
+      multipleAttempts,
+      highRiskEvents,
+      riskLocations,
+      suspiciousUsers,
+      todayEvents
     };
-    return stats;
-  }, [alerts]);
+  }, [alerts, logData]);
 
   const suspiciousCards = [
     {
       title: 'รวมเหตุการณ์ต้องสงสัย',
-      value: suspiciousStats.totalSuspicious,
+      value: suspiciousMetrics.totalSuspicious,
       icon: Eye,
       color: 'purple',
-      description: 'เหตุการณ์ที่ต้องตรวจสอบทั้งหมด'
+      description: 'เหตุการณ์ที่ต้องตรวจสอบทั้งหมด',
+      kpiType: 'all'
     },
     {
       title: 'การเข้าถึงถูกปฏิเสธ',
-      value: suspiciousStats.accessDenied,
+      value: suspiciousMetrics.accessDenied,
       icon: Shield,
       color: 'red',
-      description: 'ครั้งที่พยายามเข้าถึงแต่ถูกปฏิเสธ'
+      description: 'ครั้งที่พยายามเข้าถึงแต่ถูกปฏิเสธ',
+      kpiType: 'access_denied'
     },
     {
       title: 'เข้าถึงนอกเวลา',
-      value: suspiciousStats.unusualTime,
+      value: suspiciousMetrics.unusualTime,
       icon: Clock,
       color: 'amber',
-      description: 'การเข้าถึงนอกเวลาทำงานปกติ'
+      description: 'การเข้าถึงนอกเวลาทำงานปกติ',
+      kpiType: 'unusual_time'
     },
     {
       title: 'พยายามหลายครั้ง',
-      value: suspiciousStats.multipleAttempts,
+      value: suspiciousMetrics.multipleAttempts,
       icon: RefreshCw,
       color: 'orange',
-      description: 'ผู้ใช้ที่พยายามเข้าถึงหลายครั้ง'
+      description: 'ผู้ใช้ที่พยายามเข้าถึงหลายครั้ง',
+      kpiType: 'multiple_attempts'
     },
     {
       title: 'เหตุการณ์ระดับสูง',
-      value: suspiciousStats.highRisk,
+      value: suspiciousMetrics.highRiskEvents,
       icon: AlertTriangle,
       color: 'red',
-      description: 'เหตุการณ์ที่ต้องการความสนใจเร่งด่วน'
+      description: 'เหตุการณ์ที่ต้องการความสนใจเร่งด่วน',
+      kpiType: 'high'
     },
     {
       title: 'สถานที่เสี่ยง',
-      value: suspiciousStats.uniqueLocations,
+      value: suspiciousMetrics.riskLocations,
       icon: MapPin,
       color: 'blue',
-      description: 'จำนวนสถานที่ที่มีเหตุการณ์ต้องสงสัย'
+      description: 'จำนวนสถานที่ที่มีเหตุการณ์ต้องสงสัย',
+      kpiType: 'risk_locations'
     },
     {
       title: 'ผู้ใช้ต้องสงสัย',
-      value: suspiciousStats.uniqueUsers,
+      value: suspiciousMetrics.suspiciousUsers,
       icon: Users,
       color: 'indigo',
-      description: 'จำนวนผู้ใช้ที่มีพฤติกรรมต้องสงสัย'
+      description: 'จำนวนผู้ใช้ที่มีพฤติกรรมต้องสงสัย',
+      kpiType: 'suspicious_users'
     },
     {
       title: 'เหตุการณ์วันนี้',
-      value: suspiciousStats.todayCount,
+      value: suspiciousMetrics.todayEvents,
       icon: Calendar,
       color: 'green',
-      description: 'เหตุการณ์ต้องสงสัยที่เกิดขึ้นวันนี้'
+      description: 'เหตุการณ์ต้องสงสัยที่เกิดขึ้นวันนี้',
+      kpiType: 'today_events'
     }
   ];
 
@@ -285,9 +306,15 @@ const SuspiciousActivitySummary = ({ alerts }) => {
           {suspiciousCards.map((card, index) => {
             const colors = getColorClasses(card.color);
             const Icon = card.icon;
+            const isCardSelected = selectedKPI === card.kpiType;
 
             return (
-              <div key={index} className={`p-4 rounded-xl border ${colors.border} ${colors.bg} hover:shadow-md transition-all`}>
+              <div
+                key={index}
+                className={`p-4 rounded-xl border hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-0.5
+                  ${isCardSelected ? 'ring-2 ring-blue-500 bg-gradient-to-br from-blue-50 to-white' : `${colors.border} ${colors.bg} hover:ring-1 hover:ring-blue-300`}`}
+                onClick={() => onKPIClick && onKPIClick(card.kpiType)}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <div className={`w-10 h-10 rounded-lg ${colors.bg} flex items-center justify-center shadow-sm`}>
                     <Icon className={`w-5 h-5 ${colors.icon}`} />
@@ -315,8 +342,8 @@ const ExportModal = ({ isOpen, onClose, onExport, filteredCount }) => {
     { key: 'daily', label: 'รายงานรายวัน', desc: 'ข้อมูล 24 ชั่วโมงล่าสุด', icon: Clock },
     { key: 'weekly', label: 'รายงานรายสัปดาห์', desc: 'ข้อมูล 7 วันล่าสุด', icon: Calendar },
     { key: 'monthly', label: 'รายงานรายเดือน', desc: 'ข้อมูล 30 วันล่าสุด', icon: BarChart3 },
-    { key: 'quarterly', label: 'รายงานรายไตรมาส', desc: 'ข้อมูล 90 วันล่าสุด', icon: TrendingUp },
-    { key: 'all', label: 'รายงานทั้งหมด', desc: 'ข้อมูลทั้งหมดในระบบ', icon: Target },
+    { key: 'quarterly', label: 'รายงานรายไตรมาส', desc: 'ข้อมุล 90 วันล่าสุด', icon: TrendingUp },
+    { key: 'all', label: 'รายงานทั้งหมด', desc: 'ข้อมูลทั้งหมดในระบบ', icon: Eye },
     { key: 'filtered', label: 'รายงานตามตัวกรอง', desc: `ข้อมูลที่แสดงอยู่ (${filteredCount} รายการ)`, icon: Filter }
   ];
 
@@ -374,14 +401,14 @@ const SecurityDashboard = ({ logData = [] }) => {
   };
 
   const handleSeverityClick = (severity) => {
-    setSelectedKPI(severity); // Set the selected KPI to the clicked severity
+    setSelectedKPI(severity);
   };
 
   const handleHourClick = (hour) => {
     console.log('Hour clicked:', hour);
   };
 
-  // Generate alerts from log data
+  // แก้ไขการสร้าง alerts ให้ถูกต้องและมีประสิทธิภาพมากขึ้น
   const generateAlerts = () => {
     if (!logData || logData.length === 0) {
       setAlerts([]);
@@ -392,59 +419,70 @@ const SecurityDashboard = ({ logData = [] }) => {
     const generatedAlerts = [];
     let alertId = 1;
 
-    // Access denied alerts
-    logData.forEach(log => {
-      if (log.allow === false || log.allow === 0 || log.reason) {
-        generatedAlerts.push({
-          id: alertId++,
-          alertType: 'ACCESS_DENIED',
-          severity: log.reason?.includes('INVALID') ? 'high' : 'medium',
-          cardName: log.cardName || 'ไม่ระบุ',
-          location: log.location || log.door || 'ไม่ระบุ',
-          accessTime: log.dateTime,
-          reason: log.reason || 'การเข้าถึงถูกปฏิเสธ',
-          userType: log.userType || 'ไม่ระบุ'
-        });
-      }
+    // 1. Access denied alerts - เฉพาะที่ allow = false หรือ 0
+    const deniedLogs = logData.filter(log => log.allow === false || log.allow === 0);
+    deniedLogs.forEach(log => {
+      generatedAlerts.push({
+        id: alertId++,
+        alertType: 'ACCESS_DENIED',
+        severity: log.reason && log.reason.includes('INVALID') ? 'high' : 'medium',
+        cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
+        location: log.location || log.door || 'ไม่ระบุ',
+        accessTime: log.dateTime,
+        reason: log.reason || 'การเข้าถึงถูกปฏิเสธ',
+        userType: log.userType || 'ไม่ระบุ'
+      });
     });
 
-    // Unusual time alerts
-    logData.forEach(log => {
-      if (log.dateTime) {
-        const hour = new Date(log.dateTime).getHours();
-        if (hour < 6 || hour > 22) {
-          generatedAlerts.push({
-            id: alertId++,
-            alertType: 'UNUSUAL_TIME',
-            severity: hour < 4 || hour > 23 ? 'high' : 'medium',
-            cardName: log.cardName || 'ไม่ระบุ',
-            location: log.location || log.door || 'ไม่ระบุ',
-            accessTime: log.dateTime,
-            reason: `เข้าถึงนอกเวลา (${hour.toString().padStart(2, '0')}:00)`,
-            userType: log.userType || 'ไม่ระบุ'
-          });
+    // 2. Unusual time alerts - เฉพาะที่มี dateTime และ allow = true
+    const allowedLogs = logData.filter(log => (log.allow === true || log.allow === 1) && log.dateTime);
+    allowedLogs.forEach(log => {
+      try {
+        const accessDate = new Date(log.dateTime);
+        if (accessDate && !isNaN(accessDate.getTime())) {
+          const hour = accessDate.getHours();
+          const dayOfWeek = accessDate.getDay();
+
+          // นอกเวลาทำการ (22:00-06:00) หรือวันหยุดสุดสัปดาห์
+          if ((hour >= 22 || hour <= 6) || (dayOfWeek === 0 || dayOfWeek === 6)) {
+            // ข้ามเจ้าหน้าที่รักษาความปลอดภัย
+            if (log.userType !== 'SECURITY' && log.userType !== 'security') {
+              generatedAlerts.push({
+                id: alertId++,
+                alertType: 'UNUSUAL_TIME',
+                severity: (hour >= 23 || hour <= 5) ? 'high' : 'medium',
+                cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
+                location: log.location || log.door || 'ไม่ระบุ',
+                accessTime: log.dateTime,
+                reason: `เข้าถึงนอกเวลา (${hour.toString().padStart(2, '0')}:00) ${dayOfWeek === 0 ? '(วันอาทิตย์)' : dayOfWeek === 6 ? '(วันเสาร์)' : ''}`,
+                userType: log.userType || 'ไม่ระบุ'
+              });
+            }
+          }
         }
+      } catch (error) {
+        console.warn('Invalid date format:', log.dateTime);
       }
     });
 
-    // Multiple attempts alerts
-    const attemptGroups = {};
-    logData.forEach(log => {
-      if (log.allow === false || log.allow === 0) {
-        const key = `${log.cardName || log.cardNumber || 'Unknown'}_${log.location || log.door || 'Unknown'}`;
-        if (!attemptGroups[key]) attemptGroups[key] = [];
-        attemptGroups[key].push(log);
+    // 3. Multiple attempts - จัดกลุ่มตามบัตรและสถานที่
+    const failedAttempts = {};
+    deniedLogs.forEach(log => {
+      const key = `${log.cardName || log.cardNumber || 'Unknown'}_${log.location || log.door || 'Unknown'}`;
+      if (!failedAttempts[key]) {
+        failedAttempts[key] = [];
       }
+      failedAttempts[key].push(log);
     });
 
-    Object.values(attemptGroups).forEach(attempts => {
+    Object.entries(failedAttempts).forEach(([key, attempts]) => {
       if (attempts.length >= 2) {
         const latest = attempts[attempts.length - 1];
         generatedAlerts.push({
           id: alertId++,
           alertType: 'MULTIPLE_ATTEMPTS',
           severity: attempts.length >= 3 ? 'high' : 'medium',
-          cardName: latest.cardName || 'ไม่ระบุ',
+          cardName: latest.cardName || latest.cardNumber || 'ไม่ระบุ',
           location: latest.location || latest.door || 'ไม่ระบุ',
           accessTime: latest.dateTime,
           reason: `พยายามเข้าถึงล้มเหลว ${attempts.length} ครั้ง`,
@@ -453,7 +491,14 @@ const SecurityDashboard = ({ logData = [] }) => {
       }
     });
 
-    generatedAlerts.sort((a, b) => new Date(b.accessTime) - new Date(a.accessTime));
+    // เรียงตามเวลาล่าสุด
+    generatedAlerts.sort((a, b) => {
+      const dateA = new Date(a.accessTime);
+      const dateB = new Date(b.accessTime);
+      return dateB - dateA;
+    });
+
+    console.log(`🔍 สร้าง ${generatedAlerts.length} การแจ้งเตือน จากข้อมูล ${logData.length} รายการ`);
     setAlerts(generatedAlerts);
     setLoading(false);
     setLastUpdated(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
@@ -472,16 +517,29 @@ const SecurityDashboard = ({ logData = [] }) => {
     switch (selectedKPI) {
       case 'high':
         return alerts.filter(alert => alert.severity === 'high');
-      case 'medium': // Added for medium severity filtering
+      case 'medium':
         return alerts.filter(alert => alert.severity === 'medium');
-      case 'low': // Added for low severity filtering
+      case 'low':
         return alerts.filter(alert => alert.severity === 'low');
       case 'access_denied':
         return alerts.filter(alert => alert.alertType === 'ACCESS_DENIED');
       case 'unusual_time':
         return alerts.filter(alert => alert.alertType === 'UNUSUAL_TIME');
+      case 'multiple_attempts':
+        return alerts.filter(alert => alert.alertType === 'MULTIPLE_ATTEMPTS');
+      case 'risk_locations':
+        // This KPI represents the count of unique locations with suspicious events.
+        // When selected, we should show all alerts that have a location.
+        return alerts.filter(alert => alert.location && alert.location !== 'ไม่ระบุ');
+      case 'suspicious_users':
+        // This KPI represents the count of unique users with suspicious behavior.
+        // When selected, we should show all alerts that have a cardName.
+        return alerts.filter(alert => alert.cardName && alert.cardName !== 'ไม่ระบุ');
+      case 'today_events':
+        const today = new Date().toDateString();
+        return alerts.filter(alert => new Date(alert.accessTime).toDateString() === today);
       case 'compliance':
-        return alerts.filter(alert => alert.severity !== 'high'); // This is a simplification for compliance
+        return alerts.filter(alert => alert.severity !== 'high');
       default:
         return alerts;
     }
@@ -676,7 +734,12 @@ const SecurityDashboard = ({ logData = [] }) => {
         </section>
 
         {/* Suspicious Activity Summary */}
-        <SuspiciousActivitySummary alerts={filteredAlerts} />
+        <SuspiciousActivitySummary
+          alerts={alerts}
+          logData={logData}
+          onKPIClick={handleKPIClick}
+          selectedKPI={selectedKPI}
+        />
 
         {/* Analytics Section */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
