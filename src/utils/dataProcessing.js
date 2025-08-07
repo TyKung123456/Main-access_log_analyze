@@ -11,10 +11,11 @@ export const calculateStats = (data) => {
 
 export const processChartData = (data) => {
   // ข้อมูลสำหรับกราฟแนวโน้มรายชั่วโมง
+  // Process data for hourly trend chart using UTC hours for consistency
   const hourlyData = Array.from({length: 24}, (_, hour) => {
-    const hourData = data.filter(item => item.dateTime.getHours() === hour);
+    const hourData = data.filter(item => item.dateTime.getUTCHours() === hour);
     return {
-      hour: `${hour}:00`,
+      hour: `${hour}:00`, // Display hour as 00:00, 01:00, etc.
       count: hourData.length,
       success: hourData.filter(item => item.allow).length,
       denied: hourData.filter(item => !item.allow).length

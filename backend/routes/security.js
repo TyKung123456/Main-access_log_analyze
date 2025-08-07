@@ -472,4 +472,31 @@ router.get('/alerts/realtime', async (req, res) => {
   }
 });
 
+// POST /api/security/risk-analysis - สำหรับรัน SQL Query วิเคราะห์ความเสี่ยงแต่ละหมวดหมู่
+router.post('/risk-analysis', async (req, res) => {
+  const { dbConfig, sqlQuery, category, timeRange } = req.body;
+  try {
+    // ตรวจสอบว่ามี sqlQuery และ dbConfig ที่จำเป็น
+    if (!sqlQuery || !dbConfig) {
+      return res.status(400).json({ error: 'Missing sqlQuery or dbConfig in request body' });
+    }
+
+    // สามารถเพิ่มการตรวจสอบความปลอดภัยของ sqlQuery ที่นี่ได้
+    // เช่น การตรวจสอบคำสั่งที่ไม่ได้รับอนุญาต หรือการจำกัดสิทธิ์ผู้ใช้
+
+    const result = await query(sqlQuery, [], dbConfig); // ส่ง dbConfig ไปยังฟังก์ชัน query
+
+    res.json({
+      category,
+      timeRange,
+      data: result.rows,
+      rowCount: result.rowCount
+    });
+
+  } catch (error) {
+    console.error(`❌ Error executing risk analysis query for category ${category}:`, error);
+    res.status(500).json({ error: `Failed to execute risk analysis query: ${error.message}` });
+  }
+});
+
 module.exports = router;

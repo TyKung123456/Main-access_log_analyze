@@ -4,10 +4,8 @@ import aiService from './services/aiService.js';
 import Header from './components/Layout/Header.jsx';
 import NavigationTabs from './components/Layout/NavigationTabs.jsx';
 import UploadPage from './components/Upload/UploadPage.jsx';
-import DashboardPage from './components/Dashboard/DashboardPage.jsx';
 import ChatPage from './components/Chat/ChatPage.jsx';
-// SecurityDashboard removed - not using anymore
-import SecurityAlerts from './components/Security/SecurityAlerts.jsx';
+import CombinedDashboardAnalyticsPage from './Analytics/CombinedDashboardAnalyticsPage.jsx';
 import { useLogData } from './hooks/useLogData.js';
 import { useFilters } from './hooks/useFilters.js';
 import { useChat } from './hooks/useChat.js';
@@ -25,7 +23,7 @@ const AccessLogAnalyzer = () => {
 
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
-  const { filters, handleFilterChange } = useFilters(logData);
+  const { filters, updateFilter, clearFilters, getFilterCount } = useFilters();
   const { chatMessages, currentMessage, setCurrentMessage, handleSendMessage, isAnalyzing } = useChat(stats);
   const {
     isUploading,
@@ -300,22 +298,6 @@ ${chatMessages.length > 0 ?
             />
           );
 
-        case 'dashboard':
-          return (
-            <DashboardPage
-              filteredData={filteredData}
-              stats={stats}
-              chartData={chartData}
-              filters={filters}
-              onFilterChange={handleFilterChange}
-              onExportReport={exportReport}
-              isLoading={isLoading}
-              onError={setError}
-              uploadStats={uploadStats}
-              systemStatus={systemStatus}
-            />
-          );
-
         case 'chat':
           return (
             <ChatPage
@@ -331,122 +313,25 @@ ${chatMessages.length > 0 ?
             />
           );
 
-        case 'analytics':
+        case 'dashboard':
+        case 'analytics': // Both tabs will now render the combined page
           return (
-            <div className="space-y-4">
-              {/* Analytics Header */}
-              <div className="bg-white rounded-lg shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                      <span className="mr-3">🛡️</span>
-                      การวิเคราะห์ความปลอดภัย
-                    </h1>
-                    <p className="text-gray-600 mt-1">
-                      วิเคราะห์และติดตามความผิดปกติในระบบการเข้า-ออก
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="flex items-center text-sm text-gray-500 mb-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                      <span>อัปเดตแบบเรียลไทม์</span>
-                    </div>
-                    {uploadStats && (
-                      <div className="text-xs text-gray-400">
-                        อัปโหลดล่าสุด: {uploadStats.fileName || 'N/A'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Quick Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-3">📊</span>
-                      <div>
-                        <p className="text-sm font-medium text-blue-600">เหตุการณ์ทั้งหมด</p>
-                        <p className="text-2xl font-bold text-blue-700">{stats.totalAccess?.toLocaleString() || 0}</p>
-                        <p className="text-xs text-blue-500">
-                          {uploadStats?.totalRecords && `จากไฟล์ ${uploadStats.totalRecords.toLocaleString()} รายการ`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-3">✅</span>
-                      <div>
-                        <p className="text-sm font-medium text-green-600">การเข้าถึงสำเร็จ</p>
-                        <p className="text-2xl font-bold text-green-700">{stats.successfulAccess?.toLocaleString() || 0}</p>
-                        <p className="text-xs text-green-500">
-                          {stats.totalAccess ? `${((stats.successfulAccess / stats.totalAccess) * 100).toFixed(1)}%` : '0%'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-3">🚫</span>
-                      <div>
-                        <p className="text-sm font-medium text-red-600">การเข้าถึงถูกปฏิเสธ</p>
-                        <p className="text-2xl font-bold text-red-700">{stats.deniedAccess?.toLocaleString() || 0}</p>
-                        <p className="text-xs text-red-500">
-                          {stats.totalAccess ? `${((stats.deniedAccess / stats.totalAccess) * 100).toFixed(1)}%` : '0%'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                    <div className="flex items-center">
-                      <span className="text-2xl mr-3">👥</span>
-                      <div>
-                        <p className="text-sm font-medium text-purple-600">ผู้ใช้ที่ไม่ซ้ำ</p>
-                        <p className="text-2xl font-bold text-purple-700">{stats.uniqueUsers?.toLocaleString() || 0}</p>
-                        <p className="text-xs text-purple-500">
-                          {uploadStats?.validRecords && `จาก ${uploadStats.validRecords.toLocaleString()} รายการ`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Upload Quality Indicator */}
-                {uploadStats && (
-                  <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium text-gray-900">คุณภาพข้อมูลล่าสุด</h4>
-                        <p className="text-sm text-gray-600">
-                          อัปโหลดจากไฟล์: {uploadStats.fileName || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className={`px-3 py-1 rounded-full text-sm font-medium ${uploadSuccessRate >= 90 ? 'bg-green-100 text-green-800' :
-                            uploadSuccessRate >= 80 ? 'bg-blue-100 text-blue-800' :
-                              uploadSuccessRate >= 70 ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-red-100 text-red-800'
-                          }`}>
-                          {uploadSuccessRate || 'N/A'}% ความถูกต้อง
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                          ประมวลผลใน {uploadStats.processingTime || 'N/A'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* The SecurityDashboard component was removed from here to fix the error */}
-              <SecurityAlerts
-                logData={logData}
-                uploadStats={uploadStats}
-              />
-            </div>
+            <CombinedDashboardAnalyticsPage
+              logData={logData}
+              filteredData={filteredData}
+              stats={stats}
+              chartData={chartData}
+              filters={filters}
+              updateFilter={updateFilter}
+              clearFilters={clearFilters}
+              getFilterCount={getFilterCount}
+              loading={isLoading}
+              error={error}
+              refreshData={refreshData}
+              useRealData={true} // Assuming this is always true for real data
+              uploadStats={uploadStats}
+              systemStatus={systemStatus}
+            />
           );
 
         default:

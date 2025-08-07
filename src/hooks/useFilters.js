@@ -1,5 +1,6 @@
 // src/hooks/useFilters.js - Complete Implementation
 import { useState, useMemo } from 'react';
+import { transformFiltersForApi } from '../utils/filterUtils';
 
 export const useFilters = () => {
   const [filters, setFilters] = useState({});
@@ -193,34 +194,7 @@ export const useFilters = () => {
 
   // Export current filters for API calls
   const getApiFilters = () => {
-    const apiFilters = {};
-    
-    if (filters.dateRange) {
-      apiFilters.startDate = filters.dateRange.start;
-      apiFilters.endDate = filters.dateRange.end;
-    }
-    
-    if (filters.location) {
-      apiFilters.location = filters.location;
-    }
-    
-    if (filters.direction) {
-      apiFilters.direction = filters.direction;
-    }
-    
-    if (filters.userType) {
-      apiFilters.userType = filters.userType;
-    }
-    
-    if (filters.allow !== undefined) {
-      apiFilters.allow = filters.allow;
-    }
-    
-    if (filters.search) {
-      apiFilters.search = filters.search;
-    }
-    
-    return apiFilters;
+    return transformFiltersForApi(filters);
   };
 
   return {

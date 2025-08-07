@@ -1,6 +1,6 @@
 // components/Layout/NavigationTabs.jsx
 import React from 'react';
-import { Upload, BarChart3, MessageSquare, Shield } from 'lucide-react';
+import { Upload, BarChart3, MessageSquare } from 'lucide-react';
 
 const NavigationTabs = ({ activeTab, setActiveTab }) => {
   const tabs = [
@@ -12,15 +12,9 @@ const NavigationTabs = ({ activeTab, setActiveTab }) => {
     },
     { 
       id: 'dashboard', 
-      label: 'แดชบอร์ด', 
+      label: 'แดชบอร์ด & วิเคราะห์', 
       icon: BarChart3,
-      description: 'ภาพรวมและสถิติ'
-    },
-    { 
-      id: 'analytics', 
-      label: 'การวิเคราะห์', 
-      icon: Shield,
-      description: 'วิเคราะห์ความปลอดภัย'
+      description: 'ภาพรวม, สถิติ และการวิเคราะห์เชิงลึก'
     },
     { 
       id: 'chat', 

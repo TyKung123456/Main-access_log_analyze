@@ -374,8 +374,7 @@ const SecurityDashboard = ({ logData = [] }) => {
 
   useEffect(() => {
     setLoading(true);
-    const timer = setTimeout(generateAlerts, 500);
-    return () => clearTimeout(timer);
+    generateAlerts(); // Call immediately
   }, [logData]);
 
   // Filter alerts

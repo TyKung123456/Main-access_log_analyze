@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { generateSampleData } from '../utils/sampleData';
 import { processChartData, calculateStats } from '../utils/dataProcessing';
 import apiService from '../services/apiService';
+import { transformFiltersForApi } from '../utils/filterUtils';
 
 export const useLogData = () => {
   const [logData, setLogData] = useState([]);
@@ -20,7 +21,9 @@ export const useLogData = () => {
     dateTime: new Date(item['Date Time']),
     location: item.Location,
     direction: item.Direction,
-    allow: item.Allow,
+    allow: item.Allow, // Keep for backward compatibility if needed
+    status: item.Allow ? 'allowed' : 'denied', // Add a status string
+    reason: item.Reason || 'N/A', // Add reason for denied access
     cardName: item['Card Name'],
     userType: item['User Type'],
   }), []);
@@ -29,7 +32,9 @@ export const useLogData = () => {
     setLoading(true);
     setError(null);
     try {
-      const params = { page, limit: pagination.limit, ...filters };
+      // Transform filters for API before sending
+      const apiQueryParams = transformFiltersForApi(filters);
+      const params = { page, limit: pagination.limit, ...apiQueryParams };
 
       const [statsRes, chartsRes, logsRes] = await Promise.all([
         apiService.getStats(params),

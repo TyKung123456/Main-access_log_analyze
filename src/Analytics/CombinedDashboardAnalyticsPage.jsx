@@ -1,35 +1,92 @@
-// src/components/Analytics/AnalyticsPage.jsx
 import React, { useState, useEffect } from 'react';
-import SecurityDashboard from '../Security/SecurityDashboard';
-import SecurityAlerts from '../Security/SecurityAlerts';
+import SecurityAlerts from '../components/Security/SecurityAlerts';
+import DeniedReasonsChart from '../components/Analytics/Charts/DeniedReasonsChart';
+import StatsCards from '../components/Dashboard/StatsCards';
+import DataFilters from '../components/Dashboard/DataFilters';
+import RecentAccessTable from '../components/Dashboard/RecentAccessTable';
+import HourlyTrendChart from '../components/Dashboard/Charts/HourlyTrendChart';
+import LocationDistributionChart from '../components/Dashboard/Charts/LocationDistributionChart';
+import DirectionChart from '../components/Dashboard/Charts/DirectionChart';
+import SecurityDashboard from '../components/Security/SecurityDashboard';
 import {
-  Shield,
+  Shield, // Re-add Shield icon
   Activity,
-  AlertTriangle,
-  TrendingUp,
-  BarChart3,
-  ShieldAlert,
+  AlertTriangle, // Re-add AlertTriangle icon
+  TrendingUp, // Re-add TrendingUp icon
+  BarChart3, // Re-add BarChart3 icon
+  ShieldAlert, // Re-add ShieldAlert icon
   Construction,
-  Clock
+  Clock,
+  LayoutDashboard, // New icon for combined dashboard
+  LineChart, // New icon for charts
+  List, // New icon for recent access
 } from 'lucide-react';
 
-const AnalyticsPage = ({ logData, stats }) => {
-  const [activeView, setActiveView] = useState('overview');
+const CombinedDashboardAnalyticsPage = ({
+  logData,
+  filteredData,
+  stats,
+  chartData,
+  filters,
+  updateFilter,
+  clearFilters,
+  getFilterCount,
+  loading,
+  error,
+  refreshData,
+  useRealData,
+  uploadStats,
+  systemStatus
+}) => {
+  const [activeView, setActiveView] = useState('dashboard-overview'); // Default to dashboard overview
   const [securityMetrics, setSecurityMetrics] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingSecurityMetrics, setIsLoadingSecurityMetrics] = useState(true);
 
-  // Calculate security metrics from log data
+  // Auto refresh every 30 seconds for real data (from DashboardPage)
+  useEffect(() => {
+    if (useRealData) {
+      const interval = setInterval(() => {
+        console.log('🔄 Auto refreshing Thai data...');
+        refreshData(filters);
+      }, 30000);
+
+      return () => clearInterval(interval);
+    }
+  }, [useRealData, filters, refreshData]);
+
+  // Apply filters when they change (from DashboardPage)
+  useEffect(() => {
+    if (Object.keys(filters).length > 0) {
+      console.log('🔍 Applying filters:', filters);
+      updateFilter(filters); // Use updateFilter from props
+    }
+  }, [filters, updateFilter]);
+
+  // Manual refresh handler (from DashboardPage)
+  const handleRefresh = async () => {
+    setIsLoadingSecurityMetrics(true); // Also set loading for security metrics
+    try {
+      await refreshData(filters);
+      console.log('✅ Data refreshed successfully');
+    } catch (error) {
+      console.error('❌ Refresh failed:', error);
+    } finally {
+      setIsLoadingSecurityMetrics(false);
+    }
+  };
+
+  // Calculate security metrics from log data (from AnalyticsPage)
   useEffect(() => {
     const calculateSecurityMetrics = () => {
-      // Logic การคำนวณเหมือนเดิม ไม่มีการเปลี่ยนแปลง
       if (!logData || logData.length === 0) {
         setSecurityMetrics({
           totalEvents: 0,
           riskScore: 0,
           alertsToday: 0,
-          securityTrend: 'stable'
+          securityTrend: 'stable',
+          deniedRate: 0
         });
-        setIsLoading(false);
+        setIsLoadingSecurityMetrics(false);
         return;
       }
 
@@ -75,18 +132,29 @@ const AnalyticsPage = ({ logData, stats }) => {
         deniedRate: Math.round(deniedRate * 10) / 10
       });
 
-      setIsLoading(false);
+      setIsLoadingSecurityMetrics(false);
     };
 
     calculateSecurityMetrics();
   }, [logData]);
 
-  const views = [
-    { id: 'overview', label: 'ภาพรวม', icon: TrendingUp, description: 'สรุปสถานการณ์ความปลอดภัย' },
-    { id: 'anomalies', label: 'ความผิดปกติ', icon: Shield, description: 'การวิเคราะห์ความผิดปกติเชิงลึก' },
-    { id: 'alerts', label: 'การแจ้งเตือน', icon: AlertTriangle, description: 'การแจ้งเตือนแบบเรียลไทม์' },
-    { id: 'monitoring', label: 'การติดตาม', icon: Activity, description: 'การติดตามแบบต่อเนื่อง' }
-  ];
+  // Safe chart data with fallbacks (from DashboardPage)
+  const safeChartData = {
+    hourlyData: chartData?.hourlyData || [],
+    locationData: chartData?.locationData || [],
+    directionData: chartData?.directionData || []
+  };
+
+  // Safe stats with fallbacks (from DashboardPage)
+  const safeStats = {
+    total_records: stats?.total_records || 0,
+    success_count: stats?.success_count || 0,
+    denied_count: stats?.denied_count || 0,
+    success_rate: stats?.success_rate || 0,
+    unique_locations: stats?.unique_locations || 0,
+    unique_cards: stats?.unique_cards || 0,
+    ...stats
+  };
 
   const getTrendUI = (trend) => {
     switch (trend) {
@@ -121,13 +189,98 @@ const AnalyticsPage = ({ logData, stats }) => {
     };
   };
 
-  const renderOverview = () => {
+  const views = [
+    { id: 'dashboard-overview', label: 'ภาพรวมแดชบอร์ด', icon: LayoutDashboard, description: 'ภาพรวมสถิติการเข้าถึง' },
+    { id: 'charts', label: 'กราฟวิเคราะห์', icon: LineChart, description: 'กราฟแสดงแนวโน้มและข้อมูลเชิงลึก' },
+    { id: 'security-analysis', label: 'วิเคราะห์ความปลอดภัย', icon: Shield, description: 'สรุปและแจ้งเตือนความปลอดภัย' },
+    { id: 'recent-access', label: 'รายการเข้าถึงล่าสุด', icon: List, description: 'ดูรายการเข้าถึง 10 รายการล่าสุด' },
+    { id: 'monitoring', label: 'การติดตาม (เร็วๆ นี้)', icon: Activity, description: 'การติดตามแบบต่อเนื่อง' }
+  ];
+
+  const renderDashboardOverview = () => (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <StatsCards stats={safeStats} loading={loading} />
+
+      {/* Filters */}
+      <DataFilters
+        filters={filters}
+        onFilterChange={updateFilter}
+        onClearFilters={clearFilters}
+        loading={loading}
+      />
+
+      {/* Data Summary */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          <div>
+            <p className="text-sm text-gray-600">แสดงข้อมุล</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {filteredData.length.toLocaleString('th-TH')}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">ทั้งหมด</p>
+            <p className="text-lg font-semibold text-gray-900">
+              {safeStats.total_records.toLocaleString('th-TH')}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">อัตราสำเร็จ</p>
+            <p className="text-lg font-semibold text-green-600">
+              {safeStats.success_rate.toFixed(1)}%
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">สถานที่</p>
+            <p className="text-lg font-semibold text-blue-600">
+              {safeStats.unique_locations}
+            </p>
+          </div>
+        </div>
+
+        {useRealData && (
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <p className="text-xs text-gray-500 text-center">
+              🔄 ข้อมูลอัปเดตอัตโนมัติทุก 30 วินาที •
+              เชื่อมต่อกับฐานข้อมูล PostgreSQL •
+              รองรับข้อมูลภาษาไทย
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderCharts = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="lg:col-span-2">
+        <HourlyTrendChart
+          data={safeChartData.hourlyData}
+          loading={chartData?.loading}
+        />
+      </div>
+
+      <LocationDistributionChart
+        data={safeChartData.locationData}
+        loading={chartData?.loading}
+      />
+
+      <DirectionChart
+        data={safeChartData.directionData}
+        loading={chartData?.loading}
+      />
+      <DeniedReasonsChart data={logData} loading={loading} />
+    </div>
+  );
+
+  const renderSecurityAnalysis = () => {
     const riskTheme = getRiskTheme(securityMetrics?.riskScore || 0);
     const trendUI = getTrendUI(securityMetrics?.securityTrend);
 
     return (
       <div className="space-y-8">
-        {/* Security Metrics Overview - NEW CARD DESIGN */}
+        {/* Security Metrics Overview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
           {/* Total Events Card */}
           <div className="p-5 rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-white border border-slate-100">
@@ -196,21 +349,32 @@ const AnalyticsPage = ({ logData, stats }) => {
             </h3>
           </div>
           <div className="p-6">
-            <SecurityAlerts />
+            <SecurityAlerts logData={logData} />
           </div>
         </div>
+        <SecurityDashboard logData={logData} /> {/* Full security dashboard */}
       </div>
     );
   };
 
+  const renderRecentAccess = () => (
+    <RecentAccessTable
+      data={filteredData.slice(0, 10)}
+      loading={loading}
+      onRefresh={handleRefresh}
+    />
+  );
+
   const renderContent = () => {
     switch (activeView) {
-      case 'overview':
-        return renderOverview();
-      case 'anomalies':
-        return <SecurityDashboard />;
-      case 'alerts':
-        return <SecurityAlerts />;
+      case 'dashboard-overview':
+        return renderDashboardOverview();
+      case 'charts':
+        return renderCharts();
+      case 'security-analysis':
+        return renderSecurityAnalysis();
+      case 'recent-access':
+        return renderRecentAccess();
       case 'monitoring':
         return (
           <div className="text-center p-10 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300">
@@ -227,11 +391,11 @@ const AnalyticsPage = ({ logData, stats }) => {
           </div>
         );
       default:
-        return renderOverview();
+        return renderDashboardOverview();
     }
   };
 
-  if (isLoading) {
+  if (loading && !logData.length) {
     return (
       <div className="p-4 sm:p-6 md:p-8">
         <div className="animate-pulse space-y-8">
@@ -252,11 +416,11 @@ const AnalyticsPage = ({ logData, stats }) => {
       <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 flex items-center">
-            <Shield className="mr-3 h-8 w-8 text-blue-600" />
-            แดชบอร์ดความปลอดภัย
+            <LayoutDashboard className="mr-3 h-8 w-8 text-blue-600" />
+            แดชบอร์ด & การวิเคราะห์
           </h1>
           <p className="text-slate-500 mt-1">
-            วิเคราะห์และติดตามข้อมูลความปลอดภัยของระบบ
+            ภาพรวม, สถิติ และการวิเคราะห์เชิงลึกของข้อมูลการเข้าถึง
           </p>
         </div>
         <div className="flex items-center space-x-2 text-sm text-slate-500 bg-white px-3 py-2 rounded-full shadow-sm border border-slate-200">
@@ -264,6 +428,24 @@ const AnalyticsPage = ({ logData, stats }) => {
           <span>ข้อมูลเป็นปัจจุบัน</span>
         </div>
       </header>
+
+      {/* Error Alert (from DashboardPage) */}
+      {error && logData.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-yellow-800">
+                <strong>คำเตือน:</strong> บางข้อมูลอาจไม่อัปเดต - {error}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* View Navigation */}
       <div className="bg-slate-100 rounded-xl p-1.5">
@@ -312,4 +494,4 @@ const AnalyticsPage = ({ logData, stats }) => {
   );
 };
 
-export default AnalyticsPage;
+export default CombinedDashboardAnalyticsPage;

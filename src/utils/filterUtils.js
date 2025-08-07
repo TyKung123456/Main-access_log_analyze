@@ -44,3 +44,53 @@ export const getFilterOptions = (data) => {
     doors: [...new Set(data.map(item => item.door))].sort()
   };
 };
+
+/**
+ * Transforms the filters object from useFilters hook into a flat object suitable for API query parameters.
+ * Handles nested objects like dateRange and array values.
+ * @param {object} filters - The filters object from the useFilters hook.
+ * @returns {object} A flat object with primitive values, ready for URLSearchParams.
+ */
+export const transformFiltersForApi = (filters) => {
+  const apiFilters = {};
+
+  if (filters.dateRange) {
+    if (filters.dateRange.start) {
+      apiFilters.startDate = filters.dateRange.start;
+    }
+    if (filters.dateRange.end) {
+      apiFilters.endDate = filters.dateRange.end;
+    }
+  }
+
+  if (filters.location && Array.isArray(filters.location) && filters.location.length > 0) {
+    apiFilters.location = filters.location.join(','); // Join array for API
+  }
+
+  if (filters.direction && Array.isArray(filters.direction) && filters.direction.length > 0) {
+    apiFilters.direction = filters.direction.join(','); // Join array for API
+  }
+
+  if (filters.userType && Array.isArray(filters.userType) && filters.userType.length > 0) {
+    apiFilters.userType = filters.userType.join(','); // Join array for API
+  }
+
+  if (filters.allow !== undefined && filters.allow !== null) {
+    apiFilters.allow = filters.allow.toString(); // Convert boolean to string
+  }
+
+  if (filters.search) {
+    apiFilters.search = filters.search;
+  }
+
+  // Add any other simple filters directly
+  for (const key in filters) {
+    if (!['dateRange', 'location', 'direction', 'userType', 'allow', 'search'].includes(key)) {
+      if (filters[key] !== undefined && filters[key] !== null && !Array.isArray(filters[key]) && typeof filters[key] !== 'object') {
+        apiFilters[key] = filters[key];
+      }
+    }
+  }
+
+  return apiFilters;
+};
