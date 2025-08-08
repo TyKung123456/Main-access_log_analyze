@@ -24,20 +24,29 @@ const buildWhereClause = (params) => {
         values.push(params.allow === 'true'); // Convert string 'true'/'false' to boolean
         paramIndex++;
     }
-    if (params.location && Array.isArray(params.location) && params.location.length > 0) {
-        conditions.push(`"Location" = ANY($${paramIndex}::text[])`);
-        values.push(params.location);
-        paramIndex++;
+    if (params.location) {
+        const locations = Array.isArray(params.location) ? params.location : params.location.split(',');
+        if (locations.length > 0) {
+            conditions.push(`"Location" = ANY($${paramIndex}::text[])`);
+            values.push(locations);
+            paramIndex++;
+        }
     }
-    if (params.direction && Array.isArray(params.direction) && params.direction.length > 0) {
-        conditions.push(`"Direction" = ANY($${paramIndex}::text[])`);
-        values.push(params.direction);
-        paramIndex++;
+    if (params.direction) {
+        const directions = Array.isArray(params.direction) ? params.direction : params.direction.split(',');
+        if (directions.length > 0) {
+            conditions.push(`"Direction" = ANY($${paramIndex}::text[])`);
+            values.push(directions);
+            paramIndex++;
+        }
     }
-    if (params.userType && Array.isArray(params.userType) && params.userType.length > 0) {
-        conditions.push(`"User Type" = ANY($${paramIndex}::text[])`);
-        values.push(params.userType);
-        paramIndex++;
+    if (params.userType) {
+        const userTypes = Array.isArray(params.userType) ? params.userType : params.userType.split(',');
+        if (userTypes.length > 0) {
+            conditions.push(`"User Type" = ANY($${paramIndex}::text[])`);
+            values.push(userTypes);
+            paramIndex++;
+        }
     }
 
     return {

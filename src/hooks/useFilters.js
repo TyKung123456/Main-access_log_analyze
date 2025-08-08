@@ -3,7 +3,10 @@ import { useState, useMemo } from 'react';
 import { transformFiltersForApi } from '../utils/filterUtils';
 
 export const useFilters = () => {
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useState({
+    sortBy: 'timestamp', // Default sort by timestamp
+    sortOrder: 'desc'    // Default sort order descending
+  });
 
   // Update a specific filter
   const updateFilter = (key, value) => {
@@ -94,6 +97,12 @@ export const useFilters = () => {
     
     if (filters.search) {
       summary.push(`ค้นหา: "${filters.search}"`);
+    }
+
+    if (filters.sortBy) {
+      const sortByText = filters.sortBy === 'timestamp' ? 'เวลาเข้าถึง' : filters.sortBy;
+      const sortOrderText = filters.sortOrder === 'desc' ? 'ล่าสุด - เก่าสุด' : 'เก่าสุด - ล่าสุด';
+      summary.push(`เรียงตาม: ${sortByText} (${sortOrderText})`);
     }
     
     return summary;

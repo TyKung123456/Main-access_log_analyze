@@ -10,6 +10,10 @@ class ApiService {
   /**
    * ทำความสะอาดและตรวจสอบ parameters เพื่อป้องกัน [object Object] ใน URL
    */
+  /**
+   * ทำความสะอาดและตรวจสอบ parameters เพื่อป้องกัน [object Object] ใน URL
+   * อนุญาตให้ array ผ่านไปได้
+   */
   cleanParams(params) {
     if (!params || typeof params !== 'object') {
       return {};
@@ -18,27 +22,20 @@ class ApiService {
     const cleanedParams = {};
 
     Object.entries(params).forEach(([key, value]) => {
-      // ข้าม null, undefined, หรือ object/array
+      // ข้าม null, undefined
       if (value === null || value === undefined) {
         return;
       }
 
-      // ตรวจสอบว่าเป็น object หรือ array
-      if (typeof value === 'object') {
-        console.warn(`⚠️ Parameter '${key}' is an object, skipping:`, value);
+      // ตรวจสอบว่าเป็น object แต่ไม่ใช่ array
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        console.warn(`⚠️ Parameter '${key}' is a non-array object, skipping:`, value);
         console.warn('📍 This usually happens when state objects are passed as parameters');
         return;
       }
 
-      // แปลงเป็น string และตัดช่องว่าง
-      const stringValue = String(value).trim();
-
-      // ข้าม string ที่ว่างเปล่าหรือค่าที่ไม่ถูกต้อง
-      if (stringValue === '' || stringValue === 'undefined' || stringValue === 'null') {
-        return;
-      }
-
-      cleanedParams[key] = stringValue;
+      // สำหรับค่าอื่นๆ (string, number, boolean, array) ให้เก็บไว้
+      cleanedParams[key] = value;
     });
 
     console.log('🧹 Cleaned parameters:', cleanedParams);
@@ -68,13 +65,24 @@ class ApiService {
       signal: controller.signal, // เพิ่ม AbortSignal สำหรับยกเลิกคำขอ
     };
 
-    // 🔧 แก้ไข: ทำความสะอาด parameters ก่อนสร้าง query string
+    // 🔧 แก้ไข: ทำความสะอาด parameters และสร้าง query string อย่างถูกต้องสำหรับ array
     if (params) {
       const cleanedParams = this.cleanParams(params);
+      const queryParts = [];
 
-      if (Object.keys(cleanedParams).length > 0) {
-        const query = new URLSearchParams(cleanedParams).toString();
-        url = `${url}?${query}`;
+      for (const key in cleanedParams) {
+        const value = cleanedParams[key];
+        if (Array.isArray(value)) {
+          value.forEach(item => {
+            queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(item)}`);
+          });
+        } else {
+          queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+        }
+      }
+
+      if (queryParts.length > 0) {
+        url = `${url}?${queryParts.join('&')}`;
       }
     }
 
@@ -177,11 +185,11 @@ class ApiService {
       // 🚨 แก้ไขปัญหาหลัก: ตรวจสอบว่า params ไม่มี object
       if (params && typeof params === 'object') {
         const problematicKeys = Object.entries(params).filter(([key, value]) =>
-          typeof value === 'object' && value !== null
+          typeof value === 'object' && value !== null && !Array.isArray(value)
         );
 
         if (problematicKeys.length > 0) {
-          console.error('🚨 Found object parameters that will cause [object Object] error:', problematicKeys);
+          console.warn('⚠️ Found object parameters that will cause [object Object] error, attempting to clean:', problematicKeys);
 
           // ลบ object parameters ออก
           const cleanedParams = { ...params };
@@ -194,32 +202,13 @@ class ApiService {
         }
       }
 
-      // ลองหลาย endpoints
-      const endpoints = ['/api/logs', '/api/access-logs', '/api/entries'];
-      let lastError;
+      // ใช้เฉพาะ endpoint ที่ถูกต้อง
+      const endpoint = '/api/logs';
+      console.log(`🔍 Fetching logs from endpoint: ${endpoint}`);
+      const result = await this.request(endpoint, 'GET', null, params);
 
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`🔍 Trying endpoint: ${endpoint}`);
-          const result = await this.request(endpoint, 'GET', null, params);
-
-          console.log(`✅ Success with endpoint: ${endpoint}`);
-          return result;
-        } catch (error) {
-          console.warn(`❌ Endpoint ${endpoint} failed:`, error.message);
-          lastError = error;
-
-          // ถ้าเป็น 404 ให้ลองต่อ, ถ้าเป็น 500 ให้หยุด
-          if (error.message.includes('500')) {
-            console.error('💥 Server error detected, stopping endpoint attempts');
-            break;
-          }
-
-          continue;
-        }
-      }
-
-      throw lastError || new Error('All log endpoints failed');
+      console.log(`✅ Success with endpoint: ${endpoint}`);
+      return result;
     } catch (error) {
       console.error('❌ getLogs failed:', error);
       throw error;

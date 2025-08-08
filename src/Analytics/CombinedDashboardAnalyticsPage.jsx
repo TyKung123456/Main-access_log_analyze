@@ -36,7 +36,9 @@ const CombinedDashboardAnalyticsPage = ({
   useRealData,
   uploadStats,
   systemStatus,
-  onRowClick // Receive onRowClick prop
+  onRowClick, // Receive onRowClick prop
+  sort, // Receive sort state from useLogData
+  onSortChange // Receive onSortChange handler from useLogData
 }) => {
   const [activeView, setActiveView] = useState('dashboard-overview'); // Default to dashboard overview
   const [securityMetrics, setSecurityMetrics] = useState(null);
@@ -176,11 +178,13 @@ const CombinedDashboardAnalyticsPage = ({
 
   // Apply filters when they change (from DashboardPage)
   useEffect(() => {
-    if (Object.keys(filters).length > 0) {
-      console.log('🔍 Applying filters:', filters);
-      updateFilter(filters); // Use updateFilter from props
-    }
-  }, [filters, updateFilter]);
+    // This useEffect should trigger data refresh when filters change, not update filters themselves.
+    // The `filters` prop is already the latest state from `useFilters` in App.jsx.
+    // `refreshData` (which is `fetchAPIData` from `useLogData`) should be called here.
+    console.log('🔍 Applying filters:', filters);
+    // Pass page as 1 when filters change, and then the filters object
+    refreshData(1, filters);
+  }, [filters, refreshData]);
 
   // Manual refresh handler (from DashboardPage)
   const handleRefresh = async () => {
@@ -486,6 +490,9 @@ const CombinedDashboardAnalyticsPage = ({
         data={filteredSecurityAlerts}
         loading={loading}
         onRowClick={onRowClick} // Pass the onRowClick prop down
+        onSortChange={onSortChange} // Pass the sort handler
+        currentSortColumn={sort.column} // Pass current sort column
+        currentSortOrder={sort.order} // Pass current sort order
       />
     </div>
   );

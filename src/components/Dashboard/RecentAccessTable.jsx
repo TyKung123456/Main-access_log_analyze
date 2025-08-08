@@ -1,9 +1,25 @@
 // components/Dashboard/RecentAccessTable.jsx
-import React from 'react';
+import React, { useState } from 'react';
+import { ArrowUp, ArrowDown } from 'lucide-react'; // Import icons for sorting
 
-const RecentAccessTable = ({ data, onRowClick }) => {
+const RecentAccessTable = ({ data, onRowClick, onSortChange, currentSortColumn, currentSortOrder }) => {
   // Filter out null/undefined items and limit to 10 items
   const filteredData = data.filter(item => item !== null && item !== undefined).slice(0, 10);
+
+  const handleSortClick = (column) => {
+    let newOrder = 'ASC';
+    if (currentSortColumn === column) {
+      newOrder = currentSortOrder === 'ASC' ? 'DESC' : 'ASC';
+    }
+    onSortChange(column, newOrder);
+  };
+
+  const renderSortIcon = (column) => {
+    if (currentSortColumn === column) {
+      return currentSortOrder === 'ASC' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+    }
+    return null;
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
@@ -12,7 +28,14 @@ const RecentAccessTable = ({ data, onRowClick }) => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">เวลา</th>
+              <th
+                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                onClick={() => handleSortClick('Date Time')}
+              >
+                <div className="flex items-center">
+                  เวลา {renderSortIcon('Date Time')}
+                </div>
+              </th>
               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ผู้ใช้</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">สถานที่</th>
               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">สถานะ</th>

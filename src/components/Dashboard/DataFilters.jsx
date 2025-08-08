@@ -8,6 +8,8 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
   const [userTypes, setUserTypes] = useState([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [sortBy, setSortBy] = useState(filters.sortBy || 'timestamp'); // Default sort by timestamp
+  const [sortOrder, setSortOrder] = useState(filters.sortOrder || 'desc'); // Default sort order descending
 
   // Load filter options from API
   useEffect(() => {
@@ -70,6 +72,12 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
 
   // Handle search change with debounce
   const [searchTerm, setSearchTerm] = useState(filters.search || '');
+
+  // Synchronize internal searchTerm with external filters.search
+  useEffect(() => {
+    setSearchTerm(filters.search || '');
+  }, [filters.search]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       onFilterChange('search', searchTerm || null);
@@ -80,6 +88,14 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
 
   // Get active filter count
   const activeFilterCount = Object.keys(filters).length;
+
+  // Handle sort change
+  const handleSortChange = (newSortBy, newSortOrder) => {
+    setSortBy(newSortBy);
+    setSortOrder(newSortOrder);
+    onFilterChange('sortBy', newSortBy);
+    onFilterChange('sortOrder', newSortOrder);
+  };
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-sm space-y-4">
@@ -162,6 +178,38 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
             <option value="">ทั้งหมด</option>
             <option value="true">อนุญาต</option>
             <option value="false">ปฏิเสธ</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Sort By Date */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            เรียงตามวันที่
+          </label>
+          <select
+            value={sortBy}
+            onChange={(e) => handleSortChange(e.target.value, sortOrder)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            disabled={loading}
+          >
+            <option value="timestamp">เวลาเข้าถึง</option>
+            {/* Add other date-related fields if available in your data, e.g., 'createdAt', 'updatedAt' */}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            ลำดับการเรียง
+          </label>
+          <select
+            value={sortOrder}
+            onChange={(e) => handleSortChange(sortBy, e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            disabled={loading}
+          >
+            <option value="desc">ล่าสุด - เก่าสุด</option>
+            <option value="asc">เก่าสุด - ล่าสุด</option>
           </select>
         </div>
       </div>
@@ -286,7 +334,10 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
 
           <button
             onClick={() => {
-              // Apply current filters (this will trigger the parent component to fetch data)
+              // Explicitly trigger filter change for search term on button click
+              onFilterChange('search', searchTerm || null);
+              onFilterChange('sortBy', sortBy); // Ensure sort options are applied on search
+              onFilterChange('sortOrder', sortOrder); // Ensure sort options are applied on search
               console.log('Applying filters:', filters);
             }}
             disabled={loading}
@@ -296,7 +347,7 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
               <>
                 <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  <path className="opacity-75" fill="currentColor" d="m4 12a8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
                 กำลังค้นหา...
               </>
@@ -327,13 +378,18 @@ const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false 
                   displayText = `วันที่: ${value.start} - ${value.end}`;
                 } else if (key === 'allow' && value !== undefined) {
                   displayText = `สถานะ: ${value ? 'อนุญาต' : 'ปฏิเสธ'}`;
+                } else if (key === 'sortBy' && value) {
+                  displayText = `เรียงตาม: ${value === 'timestamp' ? 'เวลาเข้าถึง' : value}`;
+                } else if (key === 'sortOrder' && value) {
+                  displayText = `ลำดับ: ${value === 'desc' ? 'ล่าสุด - เก่าสุด' : 'เก่าสุด - ล่าสุด'}`;
                 } else if (Array.isArray(value) && value.length > 0) {
                   const keyMap = {
                     location: 'สถานที่',
                     direction: 'ทิศทาง',
                     userType: 'ประเภทผู้ใช้'
                   };
-                  displayText = `${keyMap[key] || key}: ${value.length} รายการ`;
+                  // Join array values for display to prevent [object Object]
+                  displayText = `${keyMap[key] || key}: ${value.join(', ')}`;
                 }
 
                 return displayText ? (

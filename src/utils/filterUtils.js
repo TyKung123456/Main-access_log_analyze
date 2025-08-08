@@ -83,9 +83,17 @@ export const transformFiltersForApi = (filters) => {
     apiFilters.search = filters.search;
   }
 
+  // Add sort parameters, mapping sortBy to 'sort' and sortOrder to 'order'
+  if (filters.sortBy) {
+    apiFilters.sort = filters.sortBy;
+  }
+  if (filters.sortOrder) {
+    apiFilters.order = filters.sortOrder;
+  }
+
   // Add any other simple filters directly
   for (const key in filters) {
-    if (!['dateRange', 'location', 'direction', 'userType', 'allow', 'search'].includes(key)) {
+    if (!['dateRange', 'location', 'direction', 'userType', 'allow', 'search', 'sortBy', 'sortOrder'].includes(key)) {
       if (filters[key] !== undefined && filters[key] !== null && !Array.isArray(filters[key]) && typeof filters[key] !== 'object') {
         apiFilters[key] = filters[key];
       }

@@ -13,6 +13,7 @@ export const useLogData = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 999999, total: 0, totalPages: 1 });
+  const [sort, setSort] = useState({ column: 'Date Time', order: 'DESC' }); // New state for sorting
 
   const useRealData = import.meta.env.VITE_ENABLE_SAMPLE_DATA !== 'true';
 
@@ -28,13 +29,19 @@ export const useLogData = () => {
     userType: item['User Type'],
   }), []);
 
-  const fetchAPIData = useCallback(async (page = 1, filters = {}) => {
+  const fetchAPIData = useCallback(async (page = 1, filters = {}, currentSort = sort) => {
     setLoading(true);
     setError(null);
     try {
       // Transform filters for API before sending
       const apiQueryParams = transformFiltersForApi(filters);
-      const params = { page, limit: pagination.limit, ...apiQueryParams };
+      const params = {
+        page,
+        limit: pagination.limit,
+        sort: currentSort.column, // Add sort column
+        order: currentSort.order, // Add sort order
+        ...apiQueryParams
+      };
 
       const [statsRes, chartsRes, logsRes] = await Promise.all([
         apiService.getStats(params),
@@ -55,7 +62,7 @@ export const useLogData = () => {
       
       const transformedLogs = logsRes.data.map(transformApiData);
       
-      // ✅ FIXED: Update both logData and filteredData states.
+      // Update both logData and filteredData states.
       setLogData(transformedLogs);
       setFilteredData(transformedLogs);
       
@@ -67,7 +74,7 @@ export const useLogData = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.limit, transformApiData]);
+  }, [pagination.limit, transformApiData, sort]); // Add sort to dependencies
 
   const fetchSampleData = useCallback(() => {
     const sample = generateSampleData();
@@ -80,20 +87,27 @@ export const useLogData = () => {
   
   useEffect(() => {
     if (useRealData) {
-      fetchAPIData(1, {});
+      fetchAPIData(1, {}, sort); // Pass initial sort state
     } else {
       fetchSampleData();
     }
-  }, [useRealData, fetchAPIData, fetchSampleData]);
+  }, [useRealData, fetchAPIData, fetchSampleData, sort]); // Add sort to dependencies
 
   const applyFilters = (filters) => {
     if (useRealData) {
-      fetchAPIData(1, filters);
+      fetchAPIData(1, filters, sort); // Pass current sort state
     }
   };
+
+  const handleSortChange = useCallback((column, order) => {
+    const newSort = { column, order };
+    setSort(newSort);
+    if (useRealData) {
+      fetchAPIData(1, {}, newSort); // Fetch data with new sort, reset to page 1
+    }
+  }, [useRealData, fetchAPIData]);
   
   return {
-    // ✅ FIXED: Added 'logData' to the returned object.
     logData,
     filteredData,
     stats,
@@ -101,7 +115,9 @@ export const useLogData = () => {
     loading,
     error,
     pagination,
+    sort, // Expose sort state
     applyFilters,
-    refreshData: fetchAPIData
+    refreshData: fetchAPIData,
+    onSortChange: handleSortChange // Expose sort handler
   };
 };
