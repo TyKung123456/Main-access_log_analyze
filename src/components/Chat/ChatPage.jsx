@@ -1,13 +1,40 @@
-// src/components/Chat/ChatPage.jsx - Friendly UI Version
+// src/components/Chat/ChatPage.jsx - Beautiful & User-Friendly UI
 import React, { useEffect, useRef, useState } from 'react';
 import { useChat } from '../../hooks/useChat';
-import { useLogData } from '../../hooks/useLogData'; // Import useLogData
+import {
+  Upload,
+  AlertCircle,
+  CheckCircle,
+  FileText,
+  BarChart3,
+  Clock,
+  XCircle,
+  Sparkles,
+  TrendingUp,
+  Database,
+  Zap,
+  ChevronDown,
+  Settings,
+  Shield,
+  ArrowRight,
+  Activity,
+  Trash2,
+  Info,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  MessageSquare,
+  Server,
+  Brain,
+  Globe
+} from 'lucide-react';
+import { useLogData } from '../../hooks/useLogData';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
-import aiService from '../../services/aiService'; // Import the aiService instance
+import aiService from '../../services/aiService';
 
 const ChatPage = () => {
-  const { stats } = useLogData(); // Get stats from useLogData
+  const { stats } = useLogData();
 
   const {
     messages,
@@ -18,16 +45,16 @@ const ChatPage = () => {
     clearError,
     testOllamaConnection,
     modelInfo,
-    setOllamaModel, // Destructure setOllamaModel
-    setFileContext // New: Destructure setFileContext
-  } = useChat(stats); // Pass stats to useChat
+    setOllamaModel,
+    setFileContext
+  } = useChat(stats);
 
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
   const [connectionStatus, setConnectionStatus] = useState('checking');
-  const [selectedFile, setSelectedFile] = useState(null); // New: State for selected file
-  const [isUploadingFile, setIsUploadingFile] = useState(false); // New: State for upload status
-  const fileInputRef = useRef(null); // New: Ref for file input
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -39,10 +66,10 @@ const ChatPage = () => {
     }
   }, [messages, isLoading]);
 
-  // Check Ollama connection on mount and when modelInfo changes
+  // Check Ollama connection
   useEffect(() => {
     const checkConnection = async () => {
-      if (!modelInfo.url) { // Wait for modelInfo.url to be available
+      if (!modelInfo.url) {
         setConnectionStatus('checking');
         return;
       }
@@ -65,7 +92,7 @@ const ChatPage = () => {
     };
 
     checkConnection();
-  }, [modelInfo.url, modelInfo.name]); // Depend on modelInfo.url and modelInfo.name
+  }, [modelInfo.url, modelInfo.name]);
 
   // Clear error after 10 seconds
   useEffect(() => {
@@ -77,113 +104,129 @@ const ChatPage = () => {
     }
   }, [error, clearError]);
 
-  // Connection status indicator
+  // Enhanced connection status
   const getConnectionStatusInfo = () => {
     switch (connectionStatus) {
       case 'connected':
         return {
-          color: 'green',
-          icon: '✨',
-          text: `เชื่อมต่อแล้ว`,
-          detail: `กำลังใช้ ${modelInfo.name || 'N/A'}`,
-          bgColor: 'bg-gradient-to-r from-green-50 to-emerald-50',
-          textColor: 'text-green-700',
-          borderColor: 'border-green-200'
+          icon: <CheckCircle className="w-4 h-4" />,
+          text: 'เชื่อมต่อแล้ว',
+          detail: `โมเดล ${modelInfo.name || 'N/A'}`,
+          bgColor: 'bg-emerald-50',
+          textColor: 'text-emerald-700',
+          borderColor: 'border-emerald-200',
+          dotColor: 'bg-emerald-400'
         };
       case 'model-missing':
         return {
-          color: 'yellow',
-          icon: '🔍',
-          text: `ยังไม่พร้อม`,
-          detail: `ต้องติดตั้ง ${modelInfo.name || 'โมเดล'}`,
-          bgColor: 'bg-gradient-to-r from-yellow-50 to-orange-50',
-          textColor: 'text-yellow-700',
-          borderColor: 'border-yellow-200'
+          icon: <AlertCircle className="w-4 h-4" />,
+          text: 'ต้องติดตั้งโมเดล',
+          detail: `ยังไม่มี ${modelInfo.name || 'โมเดล'}`,
+          bgColor: 'bg-amber-50',
+          textColor: 'text-amber-700',
+          borderColor: 'border-amber-200',
+          dotColor: 'bg-amber-400'
         };
       case 'error':
         return {
-          color: 'red',
-          icon: '😔',
-          text: 'ขัดข้อง',
-          detail: 'ไม่สามารถเชื่อมต่อได้',
-          bgColor: 'bg-gradient-to-r from-red-50 to-pink-50',
+          icon: <WifiOff className="w-4 h-4" />,
+          text: 'เชื่อมต่อไม่ได้',
+          detail: 'ตรวจสอบ Ollama',
+          bgColor: 'bg-red-50',
           textColor: 'text-red-700',
-          borderColor: 'border-red-200'
+          borderColor: 'border-red-200',
+          dotColor: 'bg-red-400'
         };
       default:
         return {
-          color: 'gray',
-          icon: '🔄',
+          icon: <RefreshCw className="w-4 h-4 animate-spin" />,
           text: 'กำลังตรวจสอบ',
-          detail: 'กรุณารอสักครู่...',
-          bgColor: 'bg-gradient-to-r from-gray-50 to-slate-50',
-          textColor: 'text-gray-600',
-          borderColor: 'border-gray-200'
+          detail: 'กรุณารอ...',
+          bgColor: 'bg-slate-50',
+          textColor: 'text-slate-600',
+          borderColor: 'border-slate-200',
+          dotColor: 'bg-slate-400'
         };
     }
   };
 
   const statusInfo = getConnectionStatusInfo();
 
-  // Quick setup commands
+  // Setup commands for troubleshooting
   const setupCommands = [
     {
-      title: '🚀 เริ่มต้น Ollama',
+      title: 'เริ่มต้น Ollama',
       command: 'ollama serve',
-      description: 'เปิดเซิร์ฟเวอร์ AI บนเครื่องคุณ',
-      color: 'bg-blue-50 border-blue-200 text-blue-800'
+      description: 'เปิดเซิร์ฟเวอร์ AI',
+      icon: <Server className="w-5 h-5" />,
+      color: 'from-blue-500 to-cyan-500'
     },
     {
-      title: '📋 ดูรายการโมเดล',
+      title: 'ดูรายการโมเดล',
       command: 'ollama list',
-      description: 'ตรวจสอบว่าติดตั้งโมเดลไหนไว้แล้วบ้าง',
-      color: 'bg-purple-50 border-purple-200 text-purple-800'
+      description: 'ตรวจสอบโมเดลที่มี',
+      icon: <Database className="w-5 h-5" />,
+      color: 'from-purple-500 to-pink-500'
     },
     {
-      title: '⬇️ ติดตั้งโมเดลหลัก',
-      command: `ollama pull ${modelInfo.name || 'llama3.2:3b'}`, // Use modelInfo.name or a default
-      description: `ดาวน์โหลดโมเดล AI ที่ใช้ในระบบนี้ (${modelInfo.name || 'llama3.2:3b'})`,
-      color: 'bg-green-50 border-green-200 text-green-800'
+      title: 'ติดตั้งโมเดลหลัก',
+      command: `ollama pull ${modelInfo.name || 'llama3.2:3b'}`,
+      description: `ดาวน์โหลด ${modelInfo.name || 'llama3.2:3b'}`,
+      icon: <Brain className="w-5 h-5" />,
+      color: 'from-green-500 to-emerald-500'
     },
     {
-      title: '⚡ โมเดลเล็ก (แนะนำ)',
+      title: 'โมเดลเล็ก (แนะนำ)',
       command: 'ollama pull llama3.2:1b',
-      description: 'โมเดลขนาดเล็ก ทำงานเร็ว เหมาะกับการทดสอบ',
-      color: 'bg-orange-50 border-orange-200 text-orange-800'
+      description: 'โมเดลขนาดเล็ก เร็วกว่า',
+      icon: <Zap className="w-5 h-5" />,
+      color: 'from-orange-500 to-yellow-500'
     }
   ];
 
-  // Sample questions optimized for Thai context with emojis
+  // Enhanced sample questions with better visuals
   const sampleQuestions = [
     {
       text: 'วิเคราะห์สถิติการเข้าถึงรวมของระบบ',
-      emoji: '📊',
-      category: 'วิเคราะห์'
+      icon: <BarChart3 className="w-5 h-5" />,
+      category: 'วิเคราะห์ข้อมูล',
+      color: 'from-blue-500 to-indigo-600',
+      bgColor: 'bg-blue-50'
     },
     {
       text: 'ตรวจสอบพฤติกรรมการเข้าถึงที่ผิดปกติ',
-      emoji: '🔍',
-      category: 'ความปลอดภัย'
+      icon: <Shield className="w-5 h-5" />,
+      category: 'ความปลอดภัย',
+      color: 'from-red-500 to-pink-600',
+      bgColor: 'bg-red-50'
     },
     {
       text: 'แสดงแนวโน้มการเข้าถึงตามช่วงเวลา',
-      emoji: '📈',
-      category: 'แนวโน้ม'
+      icon: <TrendingUp className="w-5 h-5" />,
+      category: 'แนวโน้ม',
+      color: 'from-green-500 to-emerald-600',
+      bgColor: 'bg-green-50'
     },
     {
       text: 'สร้างรายงานสรุปสำหรับผู้บริหาร',
-      emoji: '📝',
-      category: 'รายงาน'
+      icon: <FileText className="w-5 h-5" />,
+      category: 'รายงาน',
+      color: 'from-purple-500 to-violet-600',
+      bgColor: 'bg-purple-50'
     },
     {
       text: 'วิเคราะห์การใช้งานของแต่ละสถานที่',
-      emoji: '🌍',
-      category: 'ที่ตั้ง'
+      icon: <Globe className="w-5 h-5" />,
+      category: 'ที่ตั้ง',
+      color: 'from-cyan-500 to-teal-600',
+      bgColor: 'bg-cyan-50'
     },
     {
       text: 'ตรวจสอบการเข้าถึงนอกเวลาทำการ',
-      emoji: '🌙',
-      category: 'เวลา'
+      icon: <Clock className="w-5 h-5" />,
+      category: 'เวลาทำงาน',
+      color: 'from-orange-500 to-amber-600',
+      bgColor: 'bg-orange-50'
     }
   ];
 
@@ -191,32 +234,27 @@ const ChatPage = () => {
     setOllamaModel(event.target.value);
   };
 
-  // New: Handle file selection
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file) {
       setSelectedFile(file);
-      clearError(); // Clear any previous errors
+      clearError();
     } else {
       setSelectedFile(null);
     }
   };
 
-  // New: Handle file upload
   const handleFileUpload = async () => {
-    if (!selectedFile) {
-      // Optionally, show an error message if no file is selected
-      return;
-    }
+    if (!selectedFile) return;
 
     setIsUploadingFile(true);
     try {
-      const response = await aiService.uploadFileForAI(selectedFile); // Use aiService instance
+      const response = await aiService.uploadFileForAI(selectedFile);
       if (response.success) {
-        setFileContext(response.fileContent); // Pass content to useChat
-        setSelectedFile(null); // Clear selected file after successful upload
+        setFileContext(response.fileContent);
+        setSelectedFile(null);
         if (fileInputRef.current) {
-          fileInputRef.current.value = ''; // Clear file input
+          fileInputRef.current.value = '';
         }
         handleSendMessage(`ฉันได้อัปโหลดไฟล์ชื่อ "${selectedFile.name}" เรียบร้อยแล้ว คุณสามารถถามคำถามเกี่ยวกับข้อมูลในไฟล์นี้ได้เลย`);
       } else {
@@ -229,155 +267,139 @@ const ChatPage = () => {
     }
   };
 
-  return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-      {/* Header with friendly design */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 px-6 py-4 shadow-sm">
-        <div className="flex justify-between items-center">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                <span className="text-white text-lg">🤖</span>
-              </div>
-              <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  AI Assistant
-                </h1>
-                <p className="text-sm text-gray-600">
-                  🏠 ทำงานบนเครื่องคุณ • 🔒 ข้อมูลปลอดภัย • ⚡ รวดเร็ว
-                </p>
-              </div>
-            </div>
-          </div>
+  // Enhanced send message with file support
+  const handleEnhancedSendMessage = (message) => {
+    if (selectedFile && !isUploadingFile) {
+      handleFileUpload();
+    } else {
+      handleSendMessage(message);
+    }
+  };
 
-          <div className="flex items-center space-x-3">
-            {/* Model Selection Dropdown */}
-            {modelInfo.availableModels && modelInfo.availableModels.length > 0 && (
-              <div className="relative">
-                <select
-                  value={modelInfo.name || ''}
-                  onChange={handleModelChange}
-                  disabled={isLoading || connectionStatus === 'error' || isUploadingFile}
-                  className="block w-full pl-3 pr-10 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                >
-                  {modelInfo.availableModels.map((modelName) => (
-                    <option key={modelName} value={modelName}>
-                      {modelName}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                  <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
+  return (
+    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Enhanced Modern Header */}
+      <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/60 shadow-lg">
+        <div className="px-6 py-4">
+          {/* Brand Section */}
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-4">
+              {/* Enhanced Brand Logo */}
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/25">
+                    <MessageSquare className="w-6 h-6 text-white" />
+                  </div>
+                  <div className={`absolute -top-1 -right-1 w-4 h-4 ${statusInfo.dotColor} rounded-full border-2 border-white shadow-md animate-pulse`}></div>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                    AI Assistant
+                  </h1>
+                  <p className="text-sm text-slate-500 flex items-center gap-2">
+                    <Shield className="w-3 h-3" />
+                    <span>ปลอดภัย</span>
+                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                    <Zap className="w-3 h-3" />
+                    <span>รวดเร็ว</span>
+                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                    <Activity className="w-3 h-3" />
+                    <span>ออฟไลน์</span>
+                  </p>
                 </div>
               </div>
-            )}
 
-            {/* Friendly Connection Status */}
-            <div className={`flex items-center px-4 py-2 rounded-full text-sm font-medium border ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} shadow-sm`}>
-              <span className="mr-2 text-base">{statusInfo.icon}</span>
-              <div className="text-left">
-                <div className="font-semibold">{statusInfo.text}</div>
-                <div className="text-xs opacity-75">{statusInfo.detail}</div>
+              {/* Enhanced Status Badge */}
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} shadow-md`}>
+                {statusInfo.icon}
+                <div>
+                  <div className="font-semibold text-sm">{statusInfo.text}</div>
+                  <div className="text-xs opacity-80">{statusInfo.detail}</div>
+                </div>
               </div>
             </div>
 
-            {/* Friendly Action Buttons */}
-            <button
-              onClick={testOllamaConnection}
-              disabled={isLoading || isUploadingFile}
-              className="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 px-4 py-2 rounded-full border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 disabled:opacity-50 shadow-sm"
-            >
-              <span>🔄</span>
-              ทดสอบ
-            </button>
+            {/* Enhanced Control Panel */}
+            <div className="flex items-center gap-3">
+              {/* Model Selector */}
+              {modelInfo.availableModels && modelInfo.availableModels.length > 0 && (
+                <div className="relative">
+                  <select
+                    value={modelInfo.name || ''}
+                    onChange={handleModelChange}
+                    disabled={isLoading || connectionStatus === 'error' || isUploadingFile}
+                    className="appearance-none bg-white border border-slate-300 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {modelInfo.availableModels.map((modelName) => (
+                      <option key={modelName} value={modelName}>
+                        {modelName}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+              )}
 
-            <button
-              onClick={clearMessages}
-              className="flex items-center gap-2 text-sm text-gray-600 hover:text-red-600 px-4 py-2 rounded-full border border-gray-200 hover:border-red-300 hover:bg-red-50 transition-all duration-200 shadow-sm"
-            >
-              <span>🗑️</span>
-              เคลียร์
-            </button>
+              {/* Action Buttons */}
+              <button
+                onClick={testOllamaConnection}
+                disabled={isLoading || isUploadingFile}
+                className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span className="hidden sm:inline">ทดสอบ</span>
+              </button>
+
+              <button
+                onClick={clearMessages}
+                className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-red-50 hover:border-red-300 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all shadow-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span className="hidden sm:inline">เคลียร์</span>
+              </button>
+            </div>
           </div>
-        </div>
-        {/* New: File Upload Section */}
-        <div className="mt-4 flex items-center gap-3">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            disabled={isLoading || isUploadingFile}
-            className="block w-full text-sm text-gray-500
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-full file:border-0
-              file:text-sm file:font-semibold
-              file:bg-blue-50 file:text-blue-700
-              hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <button
-            onClick={handleFileUpload}
-            disabled={!selectedFile || isLoading || isUploadingFile}
-            className="flex items-center gap-2 text-sm text-white bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-          >
-            {isUploadingFile ? (
-              <>
-                <span className="animate-spin">🌀</span>
-                กำลังอัปโหลด...
-              </>
-            ) : (
-              <>
-                <span>⬆️</span>
-                อัปโหลดไฟล์
-              </>
-            )}
-          </button>
-          {selectedFile && (
-            <span className="text-sm text-gray-600 truncate max-w-[150px]">
-              ไฟล์ที่เลือก: {selectedFile.name}
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Friendly Connection Error Banner */}
+      {/* Enhanced Error States */}
       {connectionStatus === 'error' && (
         <div className="mx-6 mt-4">
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl p-6 shadow-sm">
+          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-3xl p-6 shadow-lg">
             <div className="flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">😔</span>
-                </div>
+              <div className="p-3 bg-red-100 rounded-2xl">
+                <WifiOff className="w-6 h-6 text-red-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-red-800 mb-2">
-                  อุ๊ปส์! เชื่อมต่อไม่ได้
+                <h3 className="text-xl font-bold text-red-800 mb-2">
+                  ไม่สามารถเชื่อมต่อได้
                 </h3>
                 <p className="text-red-700 mb-4">
-                  ดูเหมือนว่า Ollama จะยังไม่พร้อมใช้งาน ลองตรวจสอบที่
+                  ตรวจสอบว่า Ollama Server ทำงานที่
                   <code className="bg-red-100 px-2 py-1 rounded mx-1 font-mono text-sm">
                     {modelInfo.url}
                   </code>
-                  ดูนะ
                 </p>
 
-                {/* Friendly Setup Commands */}
                 <details className="group">
-                  <summary className="cursor-pointer flex items-center gap-2 text-red-800 hover:text-red-900 font-medium mb-3">
-                    <span>🛠️</span>
-                    <span>วิธีแก้ไขง่ายๆ</span>
-                    <span className="text-xs bg-red-100 px-2 py-1 rounded-full">คลิกดู</span>
+                  <summary className="cursor-pointer flex items-center gap-2 text-red-800 hover:text-red-900 font-semibold mb-4">
+                    <Settings className="w-5 h-5" />
+                    <span>วิธีแก้ไข</span>
+                    <ChevronDown className="w-4 h-4 group-open:rotate-180 transition-transform" />
                   </summary>
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {setupCommands.map((cmd, index) => (
-                      <div key={index} className={`p-4 rounded-xl border ${cmd.color} shadow-sm`}>
-                        <div className="font-semibold mb-2">{cmd.title}</div>
-                        <code className="block bg-white/70 p-2 rounded-lg font-mono text-sm border border-white/50">
+                      <div key={index} className="bg-white/80 p-5 rounded-2xl border border-red-100 shadow-sm hover:shadow-md transition-all">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className={`w-10 h-10 bg-gradient-to-r ${cmd.color} rounded-xl flex items-center justify-center text-white shadow-md`}>
+                            {cmd.icon}
+                          </div>
+                          <div className="font-semibold text-slate-800">{cmd.title}</div>
+                        </div>
+                        <code className="block bg-slate-900 text-green-400 p-3 rounded-xl font-mono text-sm border overflow-x-auto">
                           {cmd.command}
                         </code>
-                        <div className="text-sm mt-2 opacity-80">{cmd.description}</div>
+                        <div className="text-sm text-slate-600 mt-2">{cmd.description}</div>
                       </div>
                     ))}
                   </div>
@@ -388,26 +410,26 @@ const ChatPage = () => {
         </div>
       )}
 
-      {/* Friendly Model Missing Banner */}
       {connectionStatus === 'model-missing' && (
         <div className="mx-6 mt-4">
-          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-2xl p-6 shadow-sm">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-6 shadow-lg">
             <div className="flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">🔍</span>
-                </div>
+              <div className="p-3 bg-amber-100 rounded-2xl">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-yellow-800 mb-2">
+                <h3 className="text-xl font-bold text-amber-800 mb-2">
                   เกือบพร้อมแล้ว!
                 </h3>
-                <p className="text-yellow-700 mb-4">
+                <p className="text-amber-700 mb-4">
                   เหลือแค่ติดตั้งโมเดล <strong>{modelInfo.name || 'โมเดล'}</strong> เท่านั้น
                 </p>
-                <div className="bg-white/70 p-4 rounded-xl border border-white/50">
-                  <div className="text-sm font-medium text-yellow-800 mb-2">🚀 รันคำสั่งนี้:</div>
-                  <code className="block bg-yellow-100 p-3 rounded-lg font-mono text-sm text-yellow-900">
+                <div className="bg-white/80 p-4 rounded-2xl border border-amber-100">
+                  <div className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                    <Brain className="w-4 h-4" />
+                    รันคำสั่งนี้:
+                  </div>
+                  <code className="block bg-slate-900 text-green-400 p-3 rounded-xl font-mono text-sm">
                     ollama pull {modelInfo.name || 'llama3.2:3b'}
                   </code>
                 </div>
@@ -417,22 +439,19 @@ const ChatPage = () => {
         </div>
       )}
 
-      {/* Friendly Regular Error Banner */}
       {error && (
         <div className="mx-6 mt-4">
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl p-4 shadow-sm">
+          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl p-4 shadow-md">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">⚠️</span>
+              <AlertCircle className="w-5 h-5 text-red-500" />
               <div className="flex-1">
                 <p className="text-red-700 font-medium">{error}</p>
               </div>
               <button
                 onClick={clearError}
-                className="text-red-400 hover:text-red-600 p-2 rounded-full hover:bg-red-100 transition-colors"
+                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-lg transition-colors"
               >
-                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
+                <XCircle className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -445,81 +464,101 @@ const ChatPage = () => {
         className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
       >
         {messages.length === 1 ? (
-          // Friendly Welcome State
+          // Enhanced Welcome Screen
           <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-4xl">
-              <div className="mb-8">
-                {/* Animated AI Avatar */}
-                <div className="w-24 h-24 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg animate-pulse">
-                  <span className="text-4xl">🤖</span>
+            <div className="text-center max-w-6xl">
+              {/* Hero Section */}
+              <div className="mb-12">
+                <div className="relative mb-8">
+                  <div className="w-32 h-32 bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-700 rounded-3xl flex items-center justify-center mx-auto shadow-2xl shadow-blue-500/30">
+                    <MessageSquare className="w-16 h-16 text-white" />
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-green-400 rounded-full border-4 border-white shadow-lg flex items-center justify-center">
+                    <CheckCircle className="w-4 h-4 text-white" />
+                  </div>
                 </div>
 
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">
-                  สวัสดี! ฉันพร้อมช่วยคุณแล้ว ✨
+                <h2 className="text-5xl font-bold bg-gradient-to-r from-slate-900 via-blue-800 to-indigo-800 bg-clip-text text-transparent mb-6">
+                  ยินดีต้อนรับสู่ AI Assistant
                 </h2>
-                <p className="text-lg text-gray-600 mb-6">
-                  ฉันเป็น AI Assistant ที่ทำงานบนเครื่องคุณ พร้อมช่วยวิเคราะห์ Access Log อย่างปลอดภัย
+                <p className="text-xl text-slate-600 mb-8 leading-relaxed max-w-2xl mx-auto">
+                  ผู้ช่วย AI ที่ทำงานบนเครื่องคุณ พร้อมช่วยวิเคราะห์ข้อมูลอย่างปลอดภัยและเป็นส่วนตัว
                 </p>
 
-                {/* Friendly Model Info Card */}
-                <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-gray-200 shadow-sm">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <span className="text-2xl">⚙️</span>
-                    <h3 className="text-xl font-semibold text-gray-800">ข้อมูลระบบ</h3>
+                {/* Enhanced System Info Cards */}
+                <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-8 mb-12 border border-slate-200 shadow-xl">
+                  <div className="flex items-center justify-center gap-3 mb-8">
+                    <Settings className="w-6 h-6 text-slate-600" />
+                    <h3 className="text-2xl font-bold text-slate-800">ข้อมูลระบบ</h3>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="text-center p-3 bg-blue-50 rounded-xl">
-                      <div className="text-2xl mb-1">🧠</div>
-                      <div className="font-medium text-blue-900">โมเดล</div>
-                      <div className="text-blue-700 text-xs">{modelInfo.name || 'N/A'}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100 hover:shadow-lg transition-all">
+                      <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
+                        <Brain className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="font-bold text-slate-800 mb-1">โมเดล AI</div>
+                      <div className="text-sm text-slate-600 font-mono bg-blue-100 px-2 py-1 rounded">{modelInfo.name || 'ไม่ระบุ'}</div>
                     </div>
-                    <div className="text-center p-3 bg-green-50 rounded-xl">
-                      <div className="text-2xl mb-1">🌐</div>
-                      <div className="font-medium text-green-900">เซิร์ฟเวอร์</div>
-                      <div className="text-green-700 text-xs font-mono">{(modelInfo.url || '').replace('http://', '')}</div>
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-100 hover:shadow-lg transition-all">
+                      <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
+                        <Server className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="font-bold text-slate-800 mb-1">เซิร์ฟเวอร์</div>
+                      <div className="text-sm text-slate-600 font-mono bg-green-100 px-2 py-1 rounded">{(modelInfo.url || '').replace('http://', '') || 'ไม่ระบุ'}</div>
                     </div>
-                    <div className="text-center p-3 bg-orange-50 rounded-xl">
-                      <div className="text-2xl mb-1">⏱️</div>
-                      <div className="font-medium text-orange-900">Timeout</div>
-                      <div className="text-orange-700 text-xs">{modelInfo.timeout / 1000} วินาที</div>
+                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-6 rounded-2xl border border-orange-100 hover:shadow-lg transition-all">
+                      <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-amber-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
+                        <Clock className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="font-bold text-slate-800 mb-1">Timeout</div>
+                      <div className="text-sm text-slate-600 bg-orange-100 px-2 py-1 rounded">{(modelInfo.timeout || 30000) / 1000} วินาที</div>
                     </div>
-                    <div className="text-center p-3 bg-purple-50 rounded-xl">
-                      <div className="text-2xl mb-1">🔧</div>
-                      <div className="font-medium text-purple-900">Debug</div>
-                      <div className="text-purple-700 text-xs">{modelInfo.debug ? 'เปิด' : 'ปิด'}</div>
+                    <div className="bg-gradient-to-br from-purple-50 to-violet-50 p-6 rounded-2xl border border-purple-100 hover:shadow-lg transition-all">
+                      <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-violet-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
+                        <Activity className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="font-bold text-slate-800 mb-1">Debug</div>
+                      <div className="text-sm text-slate-600 bg-purple-100 px-2 py-1 rounded">{modelInfo.debug ? 'เปิด' : 'ปิด'}</div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Friendly Sample Questions */}
-              <div className="space-y-6">
-                <div className="flex items-center justify-center gap-2 mb-6">
-                  <span className="text-2xl">💡</span>
-                  <h3 className="text-2xl font-bold text-gray-800">ลองถามคำถามเหล่านี้ดู!</h3>
+              {/* Enhanced Sample Questions */}
+              <div className="space-y-8">
+                <div className="flex items-center justify-center gap-3 mb-8">
+                  <Sparkles className="w-7 h-7 text-indigo-600" />
+                  <h3 className="text-3xl font-bold text-slate-800">ลองถามคำถามเหล่านี้ดู!</h3>
+                  <Sparkles className="w-7 h-7 text-indigo-600" />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {sampleQuestions.map((question, index) => (
                     <button
                       key={index}
                       onClick={() => handleSendMessage(question.text)}
                       disabled={isLoading || connectionStatus === 'error'}
-                      className="group text-left p-5 bg-white/70 hover:bg-white border border-gray-200 hover:border-blue-300 rounded-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-lg transform hover:-translate-y-1"
+                      className="group text-left p-6 bg-white/90 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-3xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-2xl transform hover:-translate-y-3 backdrop-blur-sm"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="text-2xl group-hover:scale-110 transition-transform duration-200">
-                          {question.emoji}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full inline-block mb-2">
-                            {question.category}
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-14 h-14 bg-gradient-to-r ${question.color} rounded-2xl flex items-center justify-center text-white shadow-lg group-hover:shadow-xl transition-all group-hover:scale-110`}>
+                            {question.icon}
                           </div>
-                          <div className="font-medium text-gray-900 mb-2 leading-snug">
+                          <div className="flex-1">
+                            <div className={`text-xs font-bold text-slate-600 ${question.bgColor} px-3 py-1.5 rounded-full inline-block mb-2`}>
+                              {question.category}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="font-bold text-slate-900 mb-3 leading-snug group-hover:text-indigo-700 transition-colors text-lg">
                             {question.text}
                           </div>
-                          <div className="text-xs text-gray-500 group-hover:text-blue-600 transition-colors">
-                            คลิกเพื่อส่งคำถาม →
+                          <div className="flex items-center text-sm text-slate-500 group-hover:text-indigo-600 transition-colors font-medium">
+                            <span>คลิกเพื่อส่งคำถาม</span>
+                            <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                           </div>
                         </div>
                       </div>
@@ -528,29 +567,26 @@ const ChatPage = () => {
                 </div>
               </div>
 
-              {/* Friendly Quick Setup */}
+              {/* Enhanced Quick Setup for Error State */}
               {connectionStatus === 'error' && (
-                <div className="mt-8 p-6 bg-gradient-to-r from-gray-50 to-blue-50 rounded-2xl border border-gray-200 shadow-sm">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <span className="text-2xl">🚀</span>
-                    <h4 className="text-xl font-bold text-gray-800">ติดตั้งง่ายๆ ใน 3 ขั้นตอน</h4>
+                <div className="mt-12 p-8 bg-gradient-to-r from-slate-50 to-blue-50 rounded-3xl border border-slate-200 shadow-xl">
+                  <div className="flex items-center justify-center gap-3 mb-8">
+                    <Settings className="w-7 h-7 text-slate-600" />
+                    <h4 className="text-3xl font-bold text-slate-800">ติดตั้งง่ายๆ ใน 4 ขั้นตอน</h4>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white p-4 rounded-xl border text-center">
-                      <div className="text-3xl mb-2">1️⃣</div>
-                      <div className="font-medium mb-2">ติดตั้ง Ollama</div>
-                      <code className="text-xs bg-gray-100 p-2 rounded block">curl -fsSL https://ollama.ai/install.sh | sh</code>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border text-center">
-                      <div className="text-3xl mb-2">2️⃣</div>
-                      <div className="font-medium mb-2">เริ่มเซิร์ฟเวอร์</div>
-                      <code className="text-xs bg-gray-100 p-2 rounded block">ollama serve</code>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl border text-center">
-                      <div className="text-3xl mb-2">3️⃣</div>
-                      <div className="font-medium mb-2">ติดตั้งโมเดล</div>
-                      <code className="text-xs bg-gray-100 p-2 rounded block">ollama pull {modelInfo.name || 'llama3.2:3b'}</code>
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {setupCommands.map((cmd, index) => (
+                      <div key={index} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-lg hover:shadow-xl transition-all text-center group">
+                        <div className={`w-16 h-16 bg-gradient-to-r ${cmd.color} rounded-2xl flex items-center justify-center mx-auto mb-4 text-white shadow-lg group-hover:shadow-xl transition-all group-hover:scale-110`}>
+                          {cmd.icon}
+                        </div>
+                        <div className="font-bold text-slate-800 mb-3 text-lg">{cmd.title}</div>
+                        <code className="text-xs bg-slate-900 text-green-400 p-3 rounded-xl block border font-mono overflow-x-auto mb-3">
+                          {cmd.command}
+                        </code>
+                        <div className="text-sm text-slate-600">{cmd.description}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -586,39 +622,129 @@ const ChatPage = () => {
         )}
       </div>
 
-      {/* Chat Input */}
-      <ChatInput
-        onSendMessage={handleSendMessage}
-        isLoading={isLoading}
-        disabled={connectionStatus === 'error'}
-      />
-
-      {/* Friendly Footer */}
-      <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-t border-gray-200/50 px-6 py-3">
-        <div className="flex items-center justify-center gap-4 text-sm text-gray-600">
-          <div className="flex items-center gap-1">
-            <span>🤖</span>
-            <span className="font-medium">Ollama AI</span>
+      {/* Enhanced Chat Input with File Upload */}
+      <div className="bg-white/95 backdrop-blur-xl border-t border-slate-200/60 px-6 py-4 shadow-lg">
+        {/* File Upload Indicator */}
+        {selectedFile && (
+          <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl shadow-md">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-slate-700 truncate">
+                  📎 {selectedFile.name}
+                </div>
+                <div className="text-xs text-slate-500">
+                  ขนาด: {(selectedFile.size / 1024).toFixed(1)} KB • พร้อมอัปโหลด
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                className="p-2 rounded-xl hover:bg-red-100 transition-colors group"
+                title="ลบไฟล์ที่เลือก"
+              >
+                <XCircle className="w-5 h-5 text-slate-400 group-hover:text-red-500" />
+              </button>
+            </div>
           </div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="flex items-center gap-1">
-            <span>🔒</span>
+        )}
+
+        {/* Chat Input with File Controls */}
+        <div className="flex items-end gap-3">
+          {/* File Upload Button */}
+          <label htmlFor="file-upload-ai" className="cursor-pointer group">
+            <div className="p-3 bg-gradient-to-r from-slate-100 to-slate-200 hover:from-blue-100 hover:to-indigo-100 border border-slate-300 hover:border-blue-300 rounded-2xl transition-all shadow-sm hover:shadow-md group-hover:scale-105">
+              <Upload className="w-6 h-6 text-slate-600 group-hover:text-blue-600 transition-colors" />
+            </div>
+            <input
+              id="file-upload-ai"
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              disabled={isLoading || isUploadingFile}
+              className="hidden"
+              accept=".csv,.xlsx,.xls,.txt"
+            />
+          </label>
+
+          {/* Enhanced Chat Input */}
+          <div className="flex-1">
+            <ChatInput
+              onSendMessage={handleEnhancedSendMessage}
+              isLoading={isLoading || isUploadingFile}
+              disabled={connectionStatus === 'error'}
+              placeholder={
+                selectedFile
+                  ? `พิมพ์คำถามเกี่ยวกับไฟล์ ${selectedFile.name}...`
+                  : "พิมพ์คำถามของคุณที่นี่..."
+              }
+            />
+          </div>
+
+          {/* Upload File Button (when file is selected) */}
+          {selectedFile && (
+            <button
+              onClick={handleFileUpload}
+              disabled={!selectedFile || isLoading || isUploadingFile}
+              className="p-3 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl shadow-lg hover:shadow-xl transition-all hover:scale-105"
+              title="อัปโหลดไฟล์"
+            >
+              {isUploadingFile ? (
+                <RefreshCw className="w-6 h-6 animate-spin" />
+              ) : (
+                <Upload className="w-6 h-6" />
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Enhanced Tips */}
+        <div className="mt-4 text-center">
+          <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-slate-100 px-4 py-2 rounded-full">
+            <Sparkles className="w-3 h-3" />
+            <span>💡 ลองพิมพ์ "ช่วย" เพื่อดูคำสั่งทั้งหมด หรือ "สถิติ" เพื่อดูข้อมูลภาพรวม</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Enhanced Footer */}
+      <div className="bg-gradient-to-r from-slate-50 via-blue-50 to-indigo-50 border-t border-slate-200/60 px-6 py-4 backdrop-blur-sm">
+        <div className="flex items-center justify-center gap-6 text-sm text-slate-600">
+          <div className="flex items-center gap-2 font-semibold">
+            <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
+              <MessageSquare className="w-3 h-3 text-white" />
+            </div>
+            <span>Ollama AI</span>
+          </div>
+
+          <div className="flex items-center gap-2 text-emerald-600 font-medium">
+            <Shield className="w-4 h-4" />
             <span>ปลอดภัย 100%</span>
           </div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="flex items-center gap-1">
-            <span>⚡</span>
-            <span>รวดเร็ว</span>
+
+          <div className="flex items-center gap-2 text-blue-600 font-medium">
+            <Zap className="w-4 h-4" />
+            <span>ประมวลผลเร็ว</span>
           </div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+
+          <div className="flex items-center gap-2 text-purple-600 font-medium">
+            <Database className="w-4 h-4" />
+            <span>ทำงานออฟไลน์</span>
+          </div>
+
           <a
             href="https://ollama.ai"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors"
+            className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 transition-colors font-medium hover:underline"
           >
-            <span>📚</span>
+            <Info className="w-4 h-4" />
             <span>เรียนรู้เพิ่ม</span>
+            <ArrowRight className="w-3 h-3" />
           </a>
         </div>
       </div>
