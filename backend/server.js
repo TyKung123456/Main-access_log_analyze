@@ -10,6 +10,8 @@ const anomalyRoutes = require('./routes/anomalyRoutes');
 const { query } = require('./config/database');
 const logsRoutes = require('./routes/logs');
 const statsRoutes = require('./routes/stats');
+const securityRoutes = require('./routes/security'); // Add this line
+const uploadRoutes = require('./routes/upload'); // Add this line
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,14 +65,53 @@ app.use(helmet());
 app.use(compression());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
 app.use(express.json());
-app.use(morgan('dev'));
-
 // --- Routes ---
 app.use('/api/logs', logsRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/security', securityRoutes); // Add this line
+app.use('/api/upload', uploadRoutes); // Add this line
 
 // --- Anomaly routes (dynamic anomaly detection by type) ---
 app.use('/api/anomalies', anomalyRoutes);
+
+// --- AI Chat Proxy Endpoint ---
+app.post('/api/ai/chat', async (req, res) => {
+  const { prompt, model, options } = req.body;
+  const ollamaUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+  const ollamaModel = process.env.OLLAMA_MODEL || 'llama3:latest';
+  const ollamaTimeout = parseInt(process.env.OLLAMA_TIMEOUT || '60000', 10);
+
+  try {
+    const response = await fetch(`${ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: model || ollamaModel,
+        prompt: prompt,
+        options: options,
+        stream: false, // Ensure we get the full response at once
+      }),
+      signal: AbortSignal.timeout(ollamaTimeout),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({ message: `Ollama API error: ${errorText}` });
+    }
+
+    const data = await response.json();
+    res.json({ response: data.response });
+
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      res.status(504).json({ message: 'Ollama server response timed out.' });
+    } else {
+      res.status(500).json({ message: `Failed to connect to Ollama server: ${error.message}` });
+    }
+  }
+});
 
 // --- Health Check & Chart Endpoints ---
 app.get('/api/health', async (req, res) => {
@@ -127,96 +168,12 @@ app.get('/api/charts/:type', async (req, res) => {
     const result = await query(chartQuery, queryValues);
     res.json({ data: result.rows });
   } catch (error) {
-    console.error(`❌ Error fetching chart data for type '${req.params.type}':`, error);
     res.status(500).json({ error: 'Failed to fetch chart data' });
-  }
-});
-
-// --- Security anomaly query ---
-const anomalyQuery = `
-  SELECT * FROM "public"."real_log_analyze"
-  WHERE
-    "Allow" = false OR
-    EXTRACT(hour FROM "Date Time") < 6 OR
-    EXTRACT(hour FROM "Date Time") > 22
-  ORDER BY "Date Time" DESC
-  LIMIT 1500;
-`;
-
-// --- Helpers for security alerts ---
-const determineAccessDeniedSeverity = (log) => {
-  if (log.Reason) {
-    if (log.Reason.toUpperCase().includes('INVALID') || log.Reason.toUpperCase().includes('EXPIRED')) {
-      return 'high';
-    }
-    return 'medium';
-  }
-  return 'low';
-};
-
-const generateSecurityAlerts = (logData) => {
-  const alerts = [];
-  logData.forEach(log => {
-    if (log.Allow === false || log.Allow === 0 || log.Reason) {
-      alerts.push({
-        alertType: 'ACCESS_DENIED',
-        severity: determineAccessDeniedSeverity(log),
-        cardName: log["Card Name"] || 'ไม่ระบุ',
-        location: log.Location || log.Door || 'ไม่ระบุ',
-        accessTime: log["Date Time"],
-        reason: log.Reason || 'การเข้าถึงถูกปฏิเสธ',
-      });
-    }
-    if (log["Date Time"]) {
-      const hour = new Date(log["Date Time"]).getHours();
-      if (hour < 6 || hour > 22) {
-        alerts.push({
-          alertType: 'UNUSUAL_TIME',
-          severity: hour < 4 || hour > 23 ? 'high' : 'medium',
-          cardName: log["Card Name"] || 'ไม่ระบุ',
-          location: log.Location || log.Door || 'ไม่ระบุ',
-          accessTime: log["Date Time"],
-          reason: `การเข้าถึงนอกเวลาปกติ (${hour}:00)`,
-        });
-      }
-    }
-  });
-  return alerts.sort((a, b) => new Date(b.accessTime) - new Date(a.accessTime));
-};
-
-// --- API: Security alerts ---
-app.get('/api/analysis/alerts', async (req, res) => {
-  try {
-    const anomalyResult = await query(anomalyQuery);
-    const alerts = generateSecurityAlerts(anomalyResult.rows);
-    res.json({ alerts: alerts.slice(0, 50) }); // ส่ง 50 รายการล่าสุด
-  } catch (error) {
-    console.error('❌ Error on /api/analysis/alerts:', error);
-    res.status(500).json({ error: 'Failed to generate security alerts' });
-  }
-});
-
-// --- API: Security summary ---
-app.get('/api/analysis/security', async (req, res) => {
-  try {
-    const anomalyResult = await query(anomalyQuery);
-    const rows = anomalyResult.rows;
-    const summary = {
-      total: rows.length,
-      highRisk: rows.filter(log => determineAccessDeniedSeverity(log) === 'high').length,
-      mediumRisk: rows.filter(log => determineAccessDeniedSeverity(log) === 'medium').length,
-      lowRisk: rows.filter(log => determineAccessDeniedSeverity(log) === 'low').length,
-    };
-    res.json({ summary, data: rows });
-  } catch (error) {
-    console.error('❌ Error on /api/analysis/security:', error);
-    res.status(500).json({ error: 'Failed to perform security analysis' });
   }
 });
 
 // --- Error handling middleware ---
 app.use((error, req, res, next) => {
-  console.error('💥 Unhandled Error:', error);
   res.status(500).json({ error: 'An internal server error occurred' });
 });
 
@@ -224,12 +181,9 @@ app.use((error, req, res, next) => {
 const startServer = async () => {
   try {
     await query('SELECT NOW()');
-    console.log('✅ Database connection successful.');
     app.listen(PORT, () => {
-      console.log(`\n🚀 Server is running on http://localhost:${PORT}`);
     });
   } catch (error) {
-    console.error('❌ Could not start server. Database connection failed:', error.message);
     process.exit(1);
   }
 };

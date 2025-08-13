@@ -1,10 +1,14 @@
 // src/components/Chat/ChatPage.jsx - Friendly UI Version
 import React, { useEffect, useRef, useState } from 'react';
 import { useChat } from '../../hooks/useChat';
+import { useLogData } from '../../hooks/useLogData'; // Import useLogData
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
+import aiService from '../../services/aiService'; // Import the aiService instance
 
 const ChatPage = () => {
+  const { stats } = useLogData(); // Get stats from useLogData
+
   const {
     messages,
     isLoading,
@@ -14,12 +18,16 @@ const ChatPage = () => {
     clearError,
     testOllamaConnection,
     modelInfo,
-    setOllamaModel // Destructure setOllamaModel
-  } = useChat();
+    setOllamaModel, // Destructure setOllamaModel
+    setFileContext // New: Destructure setFileContext
+  } = useChat(stats); // Pass stats to useChat
 
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
   const [connectionStatus, setConnectionStatus] = useState('checking');
+  const [selectedFile, setSelectedFile] = useState(null); // New: State for selected file
+  const [isUploadingFile, setIsUploadingFile] = useState(false); // New: State for upload status
+  const fileInputRef = useRef(null); // New: Ref for file input
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -183,6 +191,44 @@ const ChatPage = () => {
     setOllamaModel(event.target.value);
   };
 
+  // New: Handle file selection
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setSelectedFile(file);
+      clearError(); // Clear any previous errors
+    } else {
+      setSelectedFile(null);
+    }
+  };
+
+  // New: Handle file upload
+  const handleFileUpload = async () => {
+    if (!selectedFile) {
+      // Optionally, show an error message if no file is selected
+      return;
+    }
+
+    setIsUploadingFile(true);
+    try {
+      const response = await aiService.uploadFileForAI(selectedFile); // Use aiService instance
+      if (response.success) {
+        setFileContext(response.fileContent); // Pass content to useChat
+        setSelectedFile(null); // Clear selected file after successful upload
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''; // Clear file input
+        }
+        handleSendMessage(`ฉันได้อัปโหลดไฟล์ชื่อ "${selectedFile.name}" เรียบร้อยแล้ว คุณสามารถถามคำถามเกี่ยวกับข้อมูลในไฟล์นี้ได้เลย`);
+      } else {
+        clearError(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์: ${response.message}`);
+      }
+    } catch (err) {
+      clearError(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์: ${err.message}`);
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Header with friendly design */}
@@ -211,7 +257,7 @@ const ChatPage = () => {
                 <select
                   value={modelInfo.name || ''}
                   onChange={handleModelChange}
-                  disabled={isLoading || connectionStatus === 'error'}
+                  disabled={isLoading || connectionStatus === 'error' || isUploadingFile}
                   className="block w-full pl-3 pr-10 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 >
                   {modelInfo.availableModels.map((modelName) => (
@@ -240,7 +286,7 @@ const ChatPage = () => {
             {/* Friendly Action Buttons */}
             <button
               onClick={testOllamaConnection}
-              disabled={isLoading}
+              disabled={isLoading || isUploadingFile}
               className="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 px-4 py-2 rounded-full border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 disabled:opacity-50 shadow-sm"
             >
               <span>🔄</span>
@@ -255,6 +301,43 @@ const ChatPage = () => {
               เคลียร์
             </button>
           </div>
+        </div>
+        {/* New: File Upload Section */}
+        <div className="mt-4 flex items-center gap-3">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            disabled={isLoading || isUploadingFile}
+            className="block w-full text-sm text-gray-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-full file:border-0
+              file:text-sm file:font-semibold
+              file:bg-blue-50 file:text-blue-700
+              hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <button
+            onClick={handleFileUpload}
+            disabled={!selectedFile || isLoading || isUploadingFile}
+            className="flex items-center gap-2 text-sm text-white bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-full transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+          >
+            {isUploadingFile ? (
+              <>
+                <span className="animate-spin">🌀</span>
+                กำลังอัปโหลด...
+              </>
+            ) : (
+              <>
+                <span>⬆️</span>
+                อัปโหลดไฟล์
+              </>
+            )}
+          </button>
+          {selectedFile && (
+            <span className="text-sm text-gray-600 truncate max-w-[150px]">
+              ไฟล์ที่เลือก: {selectedFile.name}
+            </span>
+          )}
         </div>
       </div>
 
@@ -393,7 +476,7 @@ const ChatPage = () => {
                     <div className="text-center p-3 bg-green-50 rounded-xl">
                       <div className="text-2xl mb-1">🌐</div>
                       <div className="font-medium text-green-900">เซิร์ฟเวอร์</div>
-                      <div className="text-green-700 text-xs font-mono">{modelInfo.url.replace('http://', '')}</div>
+                      <div className="text-green-700 text-xs font-mono">{(modelInfo.url || '').replace('http://', '')}</div>
                     </div>
                     <div className="text-center p-3 bg-orange-50 rounded-xl">
                       <div className="text-2xl mb-1">⏱️</div>

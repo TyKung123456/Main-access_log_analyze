@@ -48,12 +48,12 @@ const NavigationTabs = ({ activeTab, setActiveTab }) => {
               key={tab.id}
               onClick={() => handleTabClick(tab.id)}
               className={`
-                flex items-center gap-2 px-4 py-2 rounded-md font-medium 
-                transition-all duration-200 ease-in-out
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1
+                relative flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm
+                transition-all duration-300 ease-in-out
+                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-100
                 ${isActive
-                  ? 'bg-white text-blue-600 shadow-sm transform scale-[1.02]'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg transform scale-105'
+                  : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                 }
               `}
               role="tab"
@@ -61,17 +61,17 @@ const NavigationTabs = ({ activeTab, setActiveTab }) => {
               aria-controls={`panel-${tab.id}`}
               title={tab.description}
             >
-              <Icon 
-                className={`w-4 h-4 transition-transform duration-200 ${
-                  isActive ? 'scale-110' : ''
-                }`} 
+              <Icon
+                className={`w-5 h-5 transition-transform duration-300 ${
+                  isActive ? 'scale-110 text-blue-100' : 'text-gray-500 group-hover:text-blue-600'
+                }`}
                 aria-hidden="true"
               />
               <span className="whitespace-nowrap">
                 {tab.label}
               </span>
               {isActive && (
-                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
+                <span className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-blue-200 rounded-full animate-pulse" />
               )}
             </button>
           );

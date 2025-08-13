@@ -164,24 +164,11 @@ const CombinedDashboardAnalyticsPage = ({
     setActiveView('recent-access'); // Switch to recent access table when a KPI is clicked
   };
 
-  // Auto refresh every 30 seconds for real data
-  useEffect(() => {
-    if (useRealData) {
-      const interval = setInterval(() => {
-        console.log('🔄 Auto refreshing Thai data...');
-        refreshData(filters);
-      }, 30000);
-
-      return () => clearInterval(interval);
-    }
-  }, [useRealData, filters, refreshData]);
-
   // Apply filters when they change (from DashboardPage)
   useEffect(() => {
     // This useEffect should trigger data refresh when filters change, not update filters themselves.
     // The `filters` prop is already the latest state from `useFilters` in App.jsx.
     // `refreshData` (which is `fetchAPIData` from `useLogData`) should be called here.
-    console.log('🔍 Applying filters:', filters);
     // Pass page as 1 when filters change, and then the filters object
     refreshData(1, filters);
   }, [filters, refreshData]);

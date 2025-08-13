@@ -130,15 +130,8 @@ const AccessLogAnalyzer = () => {
 
     checkSystemHealth();
 
-    let healthCheckInterval;
-    if (process.env.NODE_ENV === 'production') {
-      healthCheckInterval = setInterval(checkSystemHealth, 5 * 60 * 1000);
-    }
-
     return () => {
-      if (healthCheckInterval) {
-        clearInterval(healthCheckInterval);
-      }
+      // Cleanup function if needed, but no interval to clear now
     };
   }, []);
 
@@ -158,13 +151,8 @@ const AccessLogAnalyzer = () => {
       setUploadStats(stats);
 
       localStorage.setItem('lastUploadStats', JSON.stringify(stats));
-
-      setTimeout(() => {
-        refreshData();
-        console.log('🔄 Refreshing data after successful upload');
-      }, 1000);
     }
-  }, [uploadResult, refreshData]);
+  }, [uploadResult]);
 
   // Error handlers
   const handleError = (error, errorInfo) => {
@@ -393,10 +381,10 @@ ${chatMessages.length > 0 ?
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 font-sans text-gray-800">
       <Header />
 
-      <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Error Banner */}
         {error && (
           <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">

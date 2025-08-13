@@ -1,55 +1,100 @@
-// services/aiService.js - Simple Fixed Version
+// services/aiService.js - MCP Version
 class AIService {
   constructor() {
-    this.provider = import.meta.env.VITE_AI_PROVIDER || 'mock';
+    this.provider = import.meta.env.VITE_AI_PROVIDER || 'mock'; // 'mock', 'local', or 'mcp'
     this.debug = import.meta.env.VITE_DEBUG_AI === 'true';
-    this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:8080'; // Changed to 8080 as requested
-    this.ollamaModel = import.meta.env.VITE_OLLAMA_MODEL; // Will be set dynamically
-    this.availableModels = []; // To store models fetched from Ollama
-    this.timeout = 30000;
-    this.isAvailable = null;
-    
+
+    // Ollama Local Model Configuration
+    this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
+    this.ollamaModel = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2:3b';
+    this.ollamaTimeout = parseInt(import.meta.env.VITE_OLLAMA_TIMEOUT || '60000', 10);
+    this.ollamaMaxRetries = parseInt(import.meta.env.VITE_OLLAMA_MAX_RETRIES || '3', 10);
+
+    // MCP Configuration (if applicable)
+    this.mcpServerName = 'ai-mcp-server';
+    this.mcpToolName = 'generate_ai_response';
+
+    this.isAvailable = null; // Cache availability status
+    this.availableModels = []; // Store available models from Ollama
+
     if (this.debug) {
       console.log('[AI Service] Initialized with provider:', this.provider);
+      console.log('[AI Service] Ollama URL:', this.ollamaUrl);
+      console.log('[AI Service] Ollama Model:', this.ollamaModel);
     }
   }
 
   async checkAvailability() {
     if (this.provider === 'mock') {
       this.isAvailable = { available: true, provider: 'mock' };
+      this.availableModels = ['mock-model']; // Provide a dummy model for mock
       return this.isAvailable;
-    }
-
-    if (this.provider === 'local') {
+    } else if (this.provider === 'local') {
       try {
+        if (this.debug) console.log(`[AI Service] Checking Ollama availability at ${this.ollamaUrl}/api/tags`);
         const response = await fetch(`${this.ollamaUrl}/api/tags`, {
           method: 'GET',
-          signal: AbortSignal.timeout(5000)
+          signal: AbortSignal.timeout(this.ollamaTimeout),
         });
-        
+
         if (response.ok) {
           const data = await response.json();
-          this.availableModels = data.models || [];
-          
-          // Set default model if VITE_OLLAMA_MODEL is not set or not found
-          if (!this.ollamaModel || !this.availableModels.some(model => model.name === this.ollamaModel)) {
-            this.ollamaModel = this.availableModels.length > 0 ? this.availableModels[0].name : null;
-          }
+          this.availableModels = data.models?.map(model => model.name) || [];
+          const hasModel = this.availableModels.some(model => model === this.ollamaModel);
 
-          const hasModel = this.ollamaModel && this.availableModels.some(model => model.name === this.ollamaModel);
-          this.isAvailable = { available: hasModel, provider: 'ollama', models: this.availableModels };
-          return this.isAvailable;
+          if (hasModel) {
+            this.isAvailable = { available: true, provider: 'local', model: this.ollamaModel, url: this.ollamaUrl };
+          } else {
+            this.isAvailable = { available: false, provider: 'local', error: `Model '${this.ollamaModel}' not found. Available models: ${this.availableModels.join(', ') || 'None'}`, url: this.ollamaUrl };
+          }
+        } else {
+          this.isAvailable = { available: false, provider: 'local', error: `Ollama server responded with status ${response.status}`, url: this.ollamaUrl };
         }
-        this.isAvailable = { available: false, error: `HTTP ${response.status}` };
-        return this.isAvailable;
       } catch (error) {
-        this.isAvailable = { available: false, error: error.message };
-        return this.isAvailable;
+        console.error('[AI Service] Ollama connection error:', error);
+        this.isAvailable = { available: false, provider: 'local', error: `Cannot connect to Ollama server: ${error.message}`, url: this.ollamaUrl };
       }
+      return this.isAvailable;
+    } else if (this.provider === 'mcp') {
+      // In a real scenario, you might have an MCP tool to check server/model availability.
+      // For now, we assume the MCP server is always available if configured.
+      this.isAvailable = { available: true, provider: 'mcp' };
+      this.availableModels = ['mcp-model']; // Provide a dummy model for MCP
+      return this.isAvailable;
+    } else {
+      this.isAvailable = { available: false, error: 'Unknown provider' };
+      this.availableModels = [];
+      return this.isAvailable;
+    }
+  }
+
+  // New: Function to upload file content for AI context
+  async uploadFileForAI(file) {
+    if (this.debug) {
+      console.log('[AI Service] Uploading file for AI:', file.name);
     }
 
-    this.isAvailable = { available: false, error: 'Unknown provider' };
-    return this.isAvailable;
+    try {
+      const reader = new FileReader();
+      const fileContentPromise = new Promise((resolve, reject) => {
+        reader.onload = (event) => resolve(event.target.result);
+        reader.onerror = (error) => reject(error);
+        reader.readAsText(file); // Read file as text
+      });
+
+      const fileContent = await fileContentPromise;
+
+      // In a real scenario, you might send this to a backend endpoint
+      // that then makes it available to the AI model.
+      // For now, we'll just return it to the frontend to be passed as context.
+      if (this.debug) {
+        console.log(`[AI Service] File "${file.name}" content read successfully.`);
+      }
+      return { success: true, fileContent: fileContent, message: 'File uploaded successfully.' };
+    } catch (error) {
+      console.error('[AI Service] Error reading or uploading file:', error);
+      return { success: false, message: `Failed to read file: ${error.message}` };
+    }
   }
 
   async generateResponse(userMessage, context = {}) {
@@ -58,63 +103,105 @@ class AIService {
     }
 
     if (!this.isAvailable || !this.isAvailable.available) {
-      console.warn('[AI Service] AI service not available, using mock response.');
-      return this.getMockResponse(userMessage, context);
+      console.warn('[AI Service] AI service not available or not checked, using mock response.');
+      // Attempt to check availability if not already checked or if it failed previously
+      await this.checkAvailability();
+      if (!this.isAvailable || !this.isAvailable.available) {
+        throw new Error(`AI Service ไม่พร้อมใช้งาน: ${this.isAvailable?.error || 'Unknown error'}`);
+      }
     }
 
     try {
       if (this.provider === 'local') {
-        return await this.generateOllamaResponse(userMessage, context);
+        return await this.generateLocalResponse(userMessage, context);
+      }
+      if (this.provider === 'mcp') {
+        return await this.generateMcpResponse(userMessage, context);
       }
       
       // Fallback to mock for all other providers
       return this.getMockResponse(userMessage, context);
     } catch (error) {
-      console.error('[AI Service] Error:', error);
-      return this.getMockResponse(userMessage, context);
+      console.error('[AI Service] Error generating response:', error);
+      throw new Error(`Failed to generate AI response: ${error.message}`);
     }
   }
 
-  async generateOllamaResponse(userMessage, context) {
-    if (!this.ollamaModel) {
-      console.warn('[AI Service] No Ollama model selected or available, using mock response.');
-      return this.getMockResponse(userMessage, context);
+  async generateLocalResponse(userMessage, context) {
+    const prompt = this.buildPrompt(userMessage, context);
+    const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/api/ai/chat`; // Assuming a backend endpoint for AI chat
+
+    if (this.debug) {
+      console.log('[AI Service] Calling local AI backend with prompt:', prompt);
+      console.log('[AI Service] Backend API URL:', apiUrl);
     }
 
-    const prompt = this.buildPrompt(userMessage, context);
-    
     try {
-      const response = await fetch(`${this.ollamaUrl}/api/generate`, {
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          model: this.ollamaModel,
           prompt: prompt,
-          stream: false,
+          model: this.ollamaModel,
           options: {
             temperature: 0.7,
-            num_predict: 500
-          }
+            num_predict: 1000,
+          },
         }),
-        signal: AbortSignal.timeout(this.timeout)
+        signal: AbortSignal.timeout(this.ollamaTimeout),
       });
 
       if (!response.ok) {
-        throw new Error(`Ollama API Error: ${response.status}`);
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Backend responded with status ${response.status}`);
       }
 
       const data = await response.json();
       return this.processResponse(data.response);
+
     } catch (error) {
-      console.warn('[AI Service] Ollama failed, using mock response');
-      return this.getMockResponse(userMessage, context);
+      console.error('[AI Service] Local AI backend call failed:', error);
+      throw new Error(`Failed to connect to local AI backend: ${error.message}`);
+    }
+  }
+
+  async generateMcpResponse(userMessage, context) {
+    const prompt = this.buildPrompt(userMessage, context);
+    
+    try {
+      // This is a conceptual call to an MCP tool.
+      // In a real implementation, this would involve using the 'use_mcp_tool' tool.
+      // For demonstration, we'll simulate a response or indicate where the call would go.
+      console.log(`[AI Service] Calling MCP tool '${this.mcpToolName}' on server '${this.mcpServerName}' with prompt:`, prompt);
+      
+      // For now, return a mock response to avoid breaking the application without a real MCP setup
+      // In a real scenario, mcpResponse would contain the AI's generated text.
+      const simulatedMcpResponse = `(MCP Response) ${this.getMockResponse(userMessage, context)}`;
+      return this.processResponse(simulatedMcpResponse);
+
+    } catch (error) {
+      console.warn('[AI Service] MCP tool failed, using mock response');
+      throw new Error(`MCP tool failed: ${error.message}`);
     }
   }
 
   buildPrompt(userMessage, context) {
-    const { stats = {} } = context;
-    
-    return `คุณเป็น AI ที่เชี่ยวชาญวิเคราะห์ Access Log
+    const { stats = {}, fileContext = '' } = context; // New: Destructure fileContext
+
+    let prompt = `คุณเป็น AI ที่เชี่ยวชาญวิเคราะห์ Access Log`;
+
+    if (fileContext) {
+      prompt += `
+
+ข้อมูลจากไฟล์ที่อัปโหลด:
+\`\`\`
+${fileContext}
+\`\`\``;
+    }
+
+    prompt += `
 
 ข้อมูลปัจจุบัน:
 - การเข้าถึงทั้งหมด: ${stats.totalAccess || 0} ครั้ง
@@ -125,6 +212,8 @@ class AIService {
 คำถาม: ${userMessage}
 
 ตอบเป็นภาษาไทยและให้คำแนะนำที่เป็นประโยชน์:`;
+
+    return prompt;
   }
 
   processResponse(rawResponse) {
@@ -259,23 +348,23 @@ class AIService {
     return {
       provider: this.provider,
       isAvailable: this.isAvailable,
-      ollamaUrl: this.ollamaUrl,
-      ollamaModel: this.ollamaModel,
-      availableModels: this.availableModels // Expose available models
+      mcpServerName: this.mcpServerName,
+      mcpToolName: this.mcpToolName,
+      url: this.ollamaUrl, // Expose Ollama URL
+      name: this.ollamaModel, // Expose current Ollama model name
+      timeout: this.ollamaTimeout, // Expose Ollama timeout
+      debug: this.debug, // Expose debug status
+      availableModels: this.availableModels, // Expose available models
     };
   }
 
-  // New method to set the Ollama model dynamically
   setOllamaModel(modelName) {
-    if (this.availableModels.some(model => model.name === modelName)) {
-      this.ollamaModel = modelName;
-      if (this.debug) {
-        console.log(`[AI Service] Ollama model set to: ${modelName}`);
-      }
-      return true;
+    this.ollamaModel = modelName;
+    // Reset availability to force re-check with new model
+    this.isAvailable = null; 
+    if (this.debug) {
+      console.log(`[AI Service] Ollama model set to: ${modelName}`);
     }
-    console.warn(`[AI Service] Model "${modelName}" not found in available models.`);
-    return false;
   }
 }
 
