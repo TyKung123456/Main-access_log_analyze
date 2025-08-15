@@ -37,7 +37,7 @@ const CombinedDashboardAnalyticsPage = ({
   uploadStats,
   systemStatus,
   onRowClick, // Receive onRowClick prop
-  sort, // Receive sort state from useLogData
+  sort = { column: null, order: null }, // Receive sort state from useLogData
   onSortChange // Receive onSortChange handler from useLogData
 }) => {
   const [activeView, setActiveView] = useState('dashboard-overview'); // Default to dashboard overview

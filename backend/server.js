@@ -151,7 +151,7 @@ app.get('/api/charts/:type', async (req, res) => {
             COUNT(CASE WHEN "Allow" = false THEN 1 END) as denied
           FROM "public"."real_log_analyze"
           ${where.clause}
-          GROUP BY 1 ORDER BY 2 DESC LIMIT 10;
+          GROUP BY 1 ORDER BY 2 DESC LIMIT 11;
         `;
         break;
       case 'direction':
