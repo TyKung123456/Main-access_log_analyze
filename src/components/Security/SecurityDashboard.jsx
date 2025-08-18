@@ -774,7 +774,6 @@ const SecurityDashboard = ({ logData = [] }) => {
   return (
     <div className="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
       <div className="max-w-[1400px] mx-auto p-8">
-        {/* Spacious Header */}
         <header className="mb-10">
           <div className="bg-white rounded-3xl p-8 shadow-lg border-0 bg-gradient-to-r from-white to-blue-50">
             <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-6">

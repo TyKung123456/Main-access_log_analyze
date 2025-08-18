@@ -59,8 +59,12 @@ router.get('/', async (req, res) => {
     const { page = 1, limit = 20, sort = 'Date Time', order = 'DESC' } = req.query;
     const offset = (page - 1) * limit;
 
+    console.log('Backend: Received query parameters:', req.query);
+
     try {
         const where = buildWhereClause(req.query);
+        console.log('Backend: Built WHERE clause:', where.clause);
+        console.log('Backend: WHERE clause values:', where.values);
         
         const totalResult = await query(`SELECT COUNT(*) FROM "public"."real_log_analyze" ${where.clause}`, where.values);
         const total = parseInt(totalResult.rows[0].count, 10);
@@ -83,15 +87,6 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch logs' });
-    }
-});
-
-router.get('/user-types', async (req, res) => {
-    try {
-        const result = await query(`SELECT DISTINCT "User Type" FROM "public"."real_log_analyze" WHERE "User Type" IS NOT NULL AND "User Type" != '' ORDER BY "User Type"`);
-        res.json(result.rows.map(row => row['User Type']));
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch user types' });
     }
 });
 

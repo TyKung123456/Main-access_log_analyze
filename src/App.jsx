@@ -1,4 +1,4 @@
-// src/App.jsx - Updated with Simple Design (Fixed)
+// src/App.jsx - ลบบล็อคว่างออก
 import React, { useState, useEffect } from 'react';
 import aiService from './services/aiService.js';
 import Header from './components/Layout/Header.jsx';
@@ -10,7 +10,7 @@ import { useLogData } from './hooks/useLogData.js';
 import { useFilters } from './hooks/useFilters.js';
 import { useChat } from './hooks/useChat.js';
 import { useUpload } from './hooks/useUpload.js';
-import LogDetailModal from './components/Dashboard/LogDetailModal.jsx'; // Import the new modal component
+import LogDetailModal from './components/Dashboard/LogDetailModal.jsx';
 
 const AccessLogAnalyzer = () => {
   const [activeTab, setActiveTab] = useState('upload');
@@ -21,7 +21,7 @@ const AccessLogAnalyzer = () => {
     database: 'checking',
     upload: 'checking'
   });
-  const [selectedLogEntry, setSelectedLogEntry] = useState(null); // New state for selected log entry
+  const [selectedLogEntry, setSelectedLogEntry] = useState(null);
 
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
@@ -129,10 +129,6 @@ const AccessLogAnalyzer = () => {
     };
 
     checkSystemHealth();
-
-    return () => {
-      // Cleanup function if needed, but no interval to clear now
-    };
   }, []);
 
   // Enhanced upload success handler
@@ -149,7 +145,6 @@ const AccessLogAnalyzer = () => {
         uploadTime: new Date().toISOString()
       };
       setUploadStats(stats);
-
       localStorage.setItem('lastUploadStats', JSON.stringify(stats));
     }
   }, [uploadResult]);
@@ -162,88 +157,6 @@ const AccessLogAnalyzer = () => {
 
   const clearError = () => {
     setError(null);
-  };
-
-  // Enhanced export report
-  const exportReport = async () => {
-    try {
-      setIsLoading(true);
-
-      const systemInfo = `สถานะระบบ:
-- AI Service: ${systemStatus.ai === 'connected' ? '✅ พร้อมใช้งาน' : '❌ ไม่พร้อมใช้งาน'}
-- Database: ${systemStatus.database === 'connected' ? '✅ เชื่อมต่อแล้ว' : '❌ ไม่สามารถเชื่อมต่อ'}
-- Upload Service: ${systemStatus.upload === 'connected' ? '✅ พร้อมใช้งาน' : '❌ ไม่พร้อมใช้งาน'}`;
-
-      const uploadInfo = uploadStats ? `
-📤 ข้อมูลการอัปโหลดล่าสุด:
-- ไฟล์: ${uploadStats.fileName || 'N/A'}
-- ขนาดไฟล์: ${uploadStats.fileSize ? (uploadStats.fileSize / 1024 / 1024).toFixed(2) + 'MB' : 'N/A'}
-- จำนวนรายการทั้งหมด: ${uploadStats.totalRecords?.toLocaleString() || 'N/A'}
-- รายการที่ถูกต้อง: ${uploadStats.validRecords?.toLocaleString() || 'N/A'}
-- รายการที่บันทึกแล้ว: ${uploadStats.insertedRecords?.toLocaleString() || 'N/A'}
-- เวลาประมวลผล: ${uploadStats.processingTime || 'N/A'}
-- อัตราความสำเร็จ: ${uploadSuccessRate ? uploadSuccessRate + '%' : 'N/A'}
-- สถานะ: ${uploadStats.success ? '✅ สำเร็จ' : '❌ ล้มเหลว'}` : '\n📤 ยังไม่มีการอัปโหลดไฟล์';
-
-      const report = `รายงานการวิเคราะห์ Access Log ฉบับสมบูรณ์
-========================================================
-
-${systemInfo}
-
-📊 สถิติรวม:
-- การเข้าถึงทั้งหมด: ${stats.totalAccess?.toLocaleString() || 0} ครั้ง
-- การเข้าถึงสำเร็จ: ${stats.successfulAccess?.toLocaleString() || 0} ครั้ง (${stats.totalAccess ? ((stats.successfulAccess / stats.totalAccess) * 100).toFixed(1) : 0}%)
-- การเข้าถึงถูกปฏิเสธ: ${stats.deniedAccess?.toLocaleString() || 0} ครั้ง (${stats.totalAccess ? ((stats.deniedAccess / stats.totalAccess) * 100).toFixed(1) : 0}%)
-- ผู้ใช้ที่ไม่ซ้ำ: ${stats.uniqueUsers?.toLocaleString() || 0} คน
-- ช่วงเวลาข้อมูล: ${stats.dateRange || 'ไม่ระบุ'}
-
-📍 การเข้าถึงตามสถานที่ (Top 10):
-${chartData.locationData?.slice(0, 10).map(item => `- ${item.name}: ${item.value.toLocaleString()} ครั้ง`).join('\n') || 'ไม่มีข้อมูล'}
-
-🕐 การเข้าถึงตามช่วงเวลา:
-${chartData.timeData?.map(item => `- ${item.name}: ${item.value.toLocaleString()} ครั้ง`).join('\n') || 'ไม่มีข้อมูล'}
-
-🎯 ทิศทางการเข้าถึง:
-${chartData.directionData?.map(item => `- ${item.name}: ${item.value.toLocaleString()} ครั้ง`).join('\n') || 'ไม่มีข้อมูล'}
-
-${uploadInfo}
-
-💬 ประวัติการสนทนากับ AI:
-${chatMessages.length > 0 ?
-          chatMessages.map(msg => `${msg.type === 'user' ? '👤 คำถาม' : '🤖 คำตอบ'}: ${msg.content}`).join('\n\n') :
-          'ยังไม่มีการสนทนากับ AI'
-        }
-
-🚨 ข้อมูลด้านความปลอดภัย:
-- ความผิดปกติที่ตรวจพบ: รายละเอียดใน Security Alerts
-- การแจ้งเตือนด้านความปลอดภัย: ดูในแท็บ "การวิเคราะห์"
-
-📋 ข้อมูลการสร้างรายงาน:
-- สร้างรายงานเมื่อ: ${new Date().toLocaleString('th-TH')}
-- ข้อมูลที่วิเคราะห์: ${logData.length.toLocaleString()} รายการ
-- เวอร์ชันระบบ: Simple Design v1.0
-
-========================================================
-รายงานนี้สร้างโดยระบบ Access Log Analyzer
-`;
-
-      const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `access-log-report-${new Date().toISOString().split('T')[0]}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      console.log('✅ Report exported successfully');
-    } catch (exportError) {
-      console.error('❌ Export failed:', exportError);
-      setError('ไม่สามารถส่งออกรายงานได้ กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   // Tab change handler
@@ -314,7 +227,7 @@ ${chatMessages.length > 0 ?
           );
 
         case 'dashboard':
-        case 'analytics': // Both tabs will now render the combined page
+        case 'analytics':
           return (
             <CombinedDashboardAnalyticsPage
               logData={logData}
@@ -328,10 +241,10 @@ ${chatMessages.length > 0 ?
               loading={isLoading}
               error={error}
               refreshData={refreshData}
-              useRealData={true} // Assuming this is always true for real data
+              useRealData={true}
               uploadStats={uploadStats}
               systemStatus={systemStatus}
-              onRowClick={handleRowClick} // Pass the new handler
+              onRowClick={handleRowClick}
             />
           );
 
@@ -384,7 +297,7 @@ ${chatMessages.length > 0 ?
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 font-sans text-gray-800">
       <Header />
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Error Banner */}
         {error && (
           <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -425,8 +338,8 @@ ${chatMessages.length > 0 ?
           </div>
         )}
 
-        {/* Navigation and Status */}
-        <div className="mb-4 flex items-center justify-between">
+        {/* Navigation and Status - ลด margin */}
+        <div className="mb-3 flex items-center justify-between">
           <NavigationTabs
             activeTab={activeTab}
             setActiveTab={handleTabChange}
@@ -436,19 +349,19 @@ ${chatMessages.length > 0 ?
           <div className="flex items-center space-x-4 text-sm">
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${systemStatus.ai === 'connected' ? 'bg-green-500' :
-                  systemStatus.ai === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
+                systemStatus.ai === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
               <span className="text-gray-600">AI</span>
             </div>
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${systemStatus.database === 'connected' ? 'bg-green-500' :
-                  systemStatus.database === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
+                systemStatus.database === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
                 }`}></div>
               <span className="text-gray-600">DB</span>
             </div>
             <div className="flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${systemStatus.upload === 'connected' ? 'bg-green-500' :
-                  systemStatus.upload === 'checking' ? 'bg-yellow-500' : 'bg-orange-500'
+                systemStatus.upload === 'checking' ? 'bg-yellow-500' : 'bg-orange-500'
                 }`}></div>
               <span className="text-gray-600">Upload</span>
             </div>
@@ -460,7 +373,7 @@ ${chatMessages.length > 0 ?
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Main Content - ลบ margin-top ออก */}
         <main role="main" aria-label="เนื้อหาหลัก">
           {renderContent()}
         </main>
@@ -475,7 +388,7 @@ ${chatMessages.length > 0 ?
       )}
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-8">
+      <footer className="bg-white border-t border-gray-200 mt-6">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between text-sm text-gray-500">
             <div>
@@ -485,7 +398,7 @@ ${chatMessages.length > 0 ?
             <div className="flex items-center space-x-6 text-xs">
               <span className={`flex items-center ${getSystemStatusColor()}`}>
                 <div className={`w-2 h-2 rounded-full mr-2 ${Object.values(systemStatus).every(status => status === 'connected') ? 'bg-green-500' :
-                    Object.values(systemStatus).some(status => status === 'checking') ? 'bg-yellow-500' : 'bg-red-500'
+                  Object.values(systemStatus).some(status => status === 'checking') ? 'bg-yellow-500' : 'bg-red-500'
                   }`}></div>
                 {Object.values(systemStatus).every(status => status === 'connected') ? 'ระบบทำงานปกติ' :
                   Object.values(systemStatus).some(status => status === 'checking') ? 'กำลังตรวจสอบระบบ' : 'ระบบมีปัญหา'}

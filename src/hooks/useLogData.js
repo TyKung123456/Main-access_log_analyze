@@ -60,7 +60,8 @@ export const useLogData = () => {
         directionData: chartsRes[2]?.data || []
       });
       
-      const transformedLogs = logsRes.data.map(transformApiData);
+      // Ensure logsRes.data is an array before mapping
+      const transformedLogs = (logsRes.data || []).map(transformApiData);
       
       // Update both logData and filteredData states.
       setLogData(transformedLogs);

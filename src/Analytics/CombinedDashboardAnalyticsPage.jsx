@@ -7,18 +7,20 @@ import HourlyTrendChart from '../components/Dashboard/Charts/HourlyTrendChart';
 import LocationDistributionChart from '../components/Dashboard/Charts/LocationDistributionChart';
 import DirectionChart from '../components/Dashboard/Charts/DirectionChart';
 import SecurityDashboard from '../components/Security/SecurityDashboard';
+import PivotTable from '../components/Analytics/PivotTable';
 import {
-  Shield, // Re-add Shield icon
+  Shield,
   Activity,
-  AlertTriangle, // Re-add AlertTriangle icon
-  TrendingUp, // Re-add TrendingUp icon
-  BarChart3, // Re-add BarChart3 icon
-  ShieldAlert, // Re-add ShieldAlert icon
+  AlertTriangle,
+  TrendingUp,
+  BarChart3,
+  ShieldAlert,
   Construction,
   Clock,
-  LayoutDashboard, // New icon for combined dashboard
-  LineChart, // New icon for charts
-  List, // New icon for recent access
+  LayoutDashboard,
+  LineChart,
+  List,
+  Table,
 } from 'lucide-react';
 
 const CombinedDashboardAnalyticsPage = ({
@@ -36,26 +38,21 @@ const CombinedDashboardAnalyticsPage = ({
   useRealData,
   uploadStats,
   systemStatus,
-  onRowClick, // Receive onRowClick prop
-  sort = { column: null, order: null }, // Receive sort state from useLogData
-  onSortChange // Receive onSortChange handler from useLogData
+  onRowClick,
+  sort = { column: null, order: null },
+  onSortChange
 }) => {
-  const [activeView, setActiveView] = useState('dashboard-overview'); // Default to dashboard overview
+  const [activeView, setActiveView] = useState('dashboard-overview');
   const [securityMetrics, setSecurityMetrics] = useState(null);
   const [isLoadingSecurityMetrics, setIsLoadingSecurityMetrics] = useState(true);
-  const [selectedSecurityKPI, setSelectedSecurityKPI] = useState('all'); // State for security dashboard KPI filtering
+  const [selectedSecurityKPI, setSelectedSecurityKPI] = useState('all');
 
   // Filtered data for RecentAccessTable based on selectedSecurityKPI
   const filteredSecurityAlerts = React.useMemo(() => {
-    // This logic should ideally mirror the filtering in SecurityDashboard
-    // to ensure consistency when a KPI card is clicked.
-    // For now, we'll pass the full logData and let SecurityDashboard handle its internal filtering.
-    // However, if the user clicks a KPI card, we need to apply that filter here for the table.
     if (selectedSecurityKPI === 'all') {
-      return logData; // Or a subset like deniedLogData if that's the default for the table
+      return logData;
     }
 
-    // Replicate the filtering logic from SecurityDashboard.jsx
     const generatedAlerts = [];
     let alertId = 1;
 
@@ -161,21 +158,15 @@ const CombinedDashboardAnalyticsPage = ({
 
   const handleSecurityKPIClick = (type) => {
     setSelectedSecurityKPI(type);
-    setActiveView('recent-access'); // Switch to recent access table when a KPI is clicked
+    setActiveView('recent-access');
   };
 
-  // Apply filters when they change (from DashboardPage)
   useEffect(() => {
-    // This useEffect should trigger data refresh when filters change, not update filters themselves.
-    // The `filters` prop is already the latest state from `useFilters` in App.jsx.
-    // `refreshData` (which is `fetchAPIData` from `useLogData`) should be called here.
-    // Pass page as 1 when filters change, and then the filters object
     refreshData(1, filters);
   }, [filters, refreshData]);
 
-  // Manual refresh handler (from DashboardPage)
   const handleRefresh = async () => {
-    setIsLoadingSecurityMetrics(true); // Also set loading for security metrics
+    setIsLoadingSecurityMetrics(true);
     try {
       await refreshData(filters);
       console.log('✅ Data refreshed successfully');
@@ -186,7 +177,6 @@ const CombinedDashboardAnalyticsPage = ({
     }
   };
 
-  // Calculate security metrics from log data (from AnalyticsPage)
   useEffect(() => {
     const calculateSecurityMetrics = () => {
       if (!logData || logData.length === 0) {
@@ -249,14 +239,12 @@ const CombinedDashboardAnalyticsPage = ({
     calculateSecurityMetrics();
   }, [logData]);
 
-  // Safe chart data with fallbacks (from DashboardPage)
   const safeChartData = {
     hourlyData: chartData?.hourlyData || [],
     locationData: chartData?.locationData || [],
     directionData: chartData?.directionData || []
   };
 
-  // Safe stats with fallbacks (from DashboardPage)
   const safeStats = {
     total_records: stats?.total_records || 0,
     success_count: stats?.success_count || 0,
@@ -305,27 +293,23 @@ const CombinedDashboardAnalyticsPage = ({
     { id: 'charts', label: 'กราฟวิเคราะห์', icon: LineChart, description: 'กราฟแสดงแนวโน้มและข้อมูลเชิงลึก' },
     { id: 'security-analysis', label: 'วิเคราะห์ความปลอดภัย', icon: Shield, description: 'สรุปและแจ้งเตือนความปลอดภัย' },
     { id: 'recent-access', label: 'รายการเข้าถึงล่าสุด', icon: List, description: 'ดูรายการเข้าถึง 10 รายการล่าสุด' },
+    { id: 'pivot-table', label: 'ตาราง Pivot', icon: Table, description: 'สร้างตาราง Pivot จากข้อมูล' },
     { id: 'monitoring', label: 'การติดตาม (เร็วๆ นี้)', icon: Activity, description: 'การติดตามแบบต่อเนื่อง' }
   ];
 
   const renderDashboardOverview = () => (
-    <div className="space-y-6">
-      {/* Stats Cards */}
+    <div className="space-y-4"> {/* ลดจาก space-y-6 */}
       <StatsCards stats={safeStats} loading={loading} />
-
-      {/* Filters */}
       <DataFilters
         filters={filters}
         onFilterChange={updateFilter}
         onClearFilters={clearFilters}
         loading={loading}
       />
-
-      {/* Data Summary */}
       <div className="bg-gray-50 rounded-lg p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div>
-            <p className="text-sm text-gray-600">แสดงข้อมุล</p>
+            <p className="text-sm text-gray-600">แสดงข้อมูล</p>
             <p className="text-lg font-semibold text-gray-900">
               {filteredData.length.toLocaleString('th-TH')}
             </p>
@@ -371,12 +355,10 @@ const CombinedDashboardAnalyticsPage = ({
           loading={chartData?.loading}
         />
       </div>
-
       <LocationDistributionChart
         data={safeChartData.locationData}
         loading={chartData?.loading}
       />
-
       <DirectionChart
         data={safeChartData.directionData}
         loading={chartData?.loading}
@@ -390,10 +372,8 @@ const CombinedDashboardAnalyticsPage = ({
     const trendUI = getTrendUI(securityMetrics?.securityTrend);
 
     return (
-      <div className="space-y-8">
-        {/* Security Metrics Overview */}
+      <div className="space-y-6"> {/* ลดจาก space-y-8 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-          {/* Total Events Card */}
           <div className="p-5 rounded-2xl shadow-sm bg-gradient-to-br from-blue-50 to-white border border-slate-100">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -406,7 +386,6 @@ const CombinedDashboardAnalyticsPage = ({
             </div>
           </div>
 
-          {/* Risk Score Card */}
           <div className={`p-5 rounded-2xl shadow-sm bg-gradient-to-br ${riskTheme.gradientFrom} to-white border border-slate-100`}>
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -419,7 +398,6 @@ const CombinedDashboardAnalyticsPage = ({
             </div>
           </div>
 
-          {/* Alerts Today Card */}
           <div className="p-5 rounded-2xl shadow-sm bg-gradient-to-br from-orange-50 to-white border border-slate-100">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -432,7 +410,6 @@ const CombinedDashboardAnalyticsPage = ({
             </div>
           </div>
 
-          {/* Security Trend Card */}
           <div className="p-5 rounded-2xl shadow-sm bg-gradient-to-br from-purple-50 to-white border border-slate-100">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -449,7 +426,6 @@ const CombinedDashboardAnalyticsPage = ({
           </div>
         </div>
 
-        {/* Recent Alerts Preview */}
         <div className="bg-gradient-to-b from-white to-slate-50/50 rounded-2xl shadow-sm border border-slate-100">
           <div className="px-6 py-4 border-b border-slate-200">
           </div>
@@ -466,7 +442,7 @@ const CombinedDashboardAnalyticsPage = ({
   };
 
   const renderRecentAccess = () => (
-    <div className="space-y-6">
+    <div className="space-y-4"> {/* ลดจาก space-y-6 */}
       <div className="bg-gray-50 rounded-lg p-4">
         <p className="text-sm text-gray-600">จำนวนรายการที่แสดง</p>
         <p className="text-lg font-semibold text-blue-600">
@@ -476,11 +452,17 @@ const CombinedDashboardAnalyticsPage = ({
       <RecentAccessTable
         data={filteredSecurityAlerts}
         loading={loading}
-        onRowClick={onRowClick} // Pass the onRowClick prop down
-        onSortChange={onSortChange} // Pass the sort handler
-        currentSortColumn={sort.column} // Pass current sort column
-        currentSortOrder={sort.order} // Pass current sort order
+        onRowClick={onRowClick}
+        onSortChange={onSortChange}
+        currentSortColumn={sort.column}
+        currentSortOrder={sort.order}
       />
+    </div>
+  );
+
+  const renderPivotTable = () => (
+    <div className="space-y-4"> {/* ลดจาก space-y-6 */}
+      <PivotTable />
     </div>
   );
 
@@ -494,6 +476,8 @@ const CombinedDashboardAnalyticsPage = ({
         return renderSecurityAnalysis();
       case 'recent-access':
         return renderRecentAccess();
+      case 'pivot-table':
+        return renderPivotTable();
       case 'monitoring':
         return (
           <div className="text-center p-10 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300">
@@ -530,7 +514,7 @@ const CombinedDashboardAnalyticsPage = ({
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-8 bg-slate-50 min-h-screen">
+    <div className="p-4 sm:p-6 md:p-8 space-y-4 bg-slate-50 min-h-screen"> {/* เปลี่ยนจาก space-y-8 เป็น space-y-4 */}
       {/* Header */}
       <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
@@ -548,7 +532,7 @@ const CombinedDashboardAnalyticsPage = ({
         </div>
       </header>
 
-      {/* Error Alert (from DashboardPage) */}
+      {/* Error Alert */}
       {error && logData.length > 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex">
