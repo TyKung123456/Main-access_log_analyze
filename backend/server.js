@@ -12,6 +12,7 @@ const logsRoutes = require('./routes/logs');
 const statsRoutes = require('./routes/stats');
 const securityRoutes = require('./routes/security'); // Add this line
 const uploadRoutes = require('./routes/upload'); // Add this line
+const exportRoutes = require('./routes/export'); // Add this line
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -74,11 +75,14 @@ app.use(helmet());
 app.use(compression());
 app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
 app.use(express.json());
+app.use(morgan('dev')); // Log HTTP requests
+
 // --- Routes ---
 app.use('/api/logs', logsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/security', securityRoutes); // Add this line
 app.use('/api/upload', uploadRoutes); // Add this line
+app.use('/api/export', exportRoutes); // Add this line
 
 // --- Anomaly routes (dynamic anomaly detection by type) ---
 app.use('/api/anomalies', anomalyRoutes);
@@ -191,8 +195,10 @@ const startServer = async () => {
   try {
     await query('SELECT NOW()');
     app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
+    console.error('Failed to connect to the database or start server:', error);
     process.exit(1);
   }
 };
