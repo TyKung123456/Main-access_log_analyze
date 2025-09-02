@@ -90,6 +90,9 @@ const CompactKPIGrid = ({ alerts, logData, selectedKPI, onKPIClick }) => {
 // Compact Analytics Panel
 const CompactAnalytics = ({ alerts, onLocationClick }) => {
   const [activeTab, setActiveTab] = useState('trends');
+  const [caseList, setCaseList] = useState([]);
+  const [caseLoading, setCaseLoading] = useState(false);
+  const [caseResult, setCaseResult] = useState({ id: null, rows: [], count: 0 });
 
   // Hourly trends - ใช้เฉพาะข้อมูลจริง
   const hourlyData = useMemo(() => {
@@ -124,8 +127,35 @@ const CompactAnalytics = ({ alerts, onLocationClick }) => {
   const tabs = [
     { id: 'trends', label: '📈 แนวโน้ม', desc: 'รูปแบบ 24 ชั่วโมง' },
     { id: 'locations', label: '📍 สถานที่', desc: 'วิเคราะห์ความเสี่ยง' },
-    { id: 'insights', label: '💡 สรุป', desc: 'ข้อเสนะแนะ' }
+    { id: 'insights', label: '💡 สรุป', desc: 'ข้อเสนะแนะ' },
+    { id: 'cases', label: '🗂️ เคส', desc: 'รายงานแยกตามเคส' }
   ];
+
+  // Load case list once
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/security/cases/list');
+        const data = await res.json();
+        setCaseList(data.cases || []);
+      } catch (e) {
+        console.warn('Load case list failed');
+      }
+    })();
+  }, []);
+
+  const runCase = async (id) => {
+    setCaseLoading(true);
+    try {
+      const res = await fetch(`/api/security/cases?id=${encodeURIComponent(id)}`);
+      const data = await res.json();
+      setCaseResult({ id, rows: data.rows || [], count: data.count || 0 });
+    } catch (e) {
+      setCaseResult({ id, rows: [], count: 0 });
+    } finally {
+      setCaseLoading(false);
+    }
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border min-h-[450px]">
@@ -352,6 +382,55 @@ const CompactAnalytics = ({ alerts, onLocationClick }) => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'cases' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              {caseList.length === 0 ? (
+                <div className="text-sm text-gray-500">ไม่มีรายการเคส</div>
+              ) : caseList.map(c => (
+                <button key={c.id} onClick={() => runCase(c.id)} className={`w-full text-left px-3 py-2 rounded border ${caseResult.id===c.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  <div className="text-sm font-medium text-gray-800">{c.title}</div>
+                  <div className="text-xs text-gray-500">{c.category}</div>
+                </button>
+              ))}
+            </div>
+            <div className="min-h-[220px]">
+              {caseLoading ? (
+                <div className="text-sm text-gray-500">กำลังดึงข้อมูล...</div>
+              ) : caseResult.id ? (
+                <div>
+                  <div className="text-sm text-gray-700 mb-2">ผลลัพธ์: {caseResult.count?.toLocaleString('th-TH') || 0} แถว</div>
+                  <div className="overflow-auto border rounded">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          {caseResult.rows[0] && Object.keys(caseResult.rows[0]).map((k) => (
+                            <th key={k} className="px-2 py-1 text-left text-gray-600 whitespace-nowrap">{k}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(caseResult.rows || []).slice(0,20).map((r, idx) => (
+                          <tr key={idx} className="border-t">
+                            {Object.keys(r).map(k => (
+                              <td key={k} className="px-2 py-1 whitespace-nowrap text-gray-800">{String(r[k] ?? '')}</td>
+                            ))}
+                          </tr>
+                        ))}
+                        {(!caseResult.rows || caseResult.rows.length===0) && (
+                          <tr><td className="px-2 py-4 text-gray-500">ไม่มีข้อมูล</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">เลือกเคสจากด้านซ้ายเพื่อดูผลลัพธ์</div>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -50,7 +50,7 @@ const StatCard = ({ icon, label, value, color = 'blue', trend = null, size = 'no
           </div>
         </div>
       </div>
-      <div className={`absolute bottom-0 left-0 h-1 bg-gradient-to-r from-${color}-400 to-${color}-600 transition-all duration-300 w-0 group-hover:w-full`}></div>
+      <div className={`absolute bottom-0 left-0 h-1 bg-${color}-400 transition-all duration-300 w-0 group-hover:w-full`}></div>
     </div>
   );
 };
@@ -79,11 +79,9 @@ const ProgressIndicator = ({ progress, stage }) => (
     <div className="relative">
       <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
         <div
-          className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-1000 ease-out relative"
+          className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-out"
           style={{ width: `${progress}%` }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse"></div>
-        </div>
+        />
       </div>
     </div>
   </div>
@@ -92,7 +90,7 @@ const ProgressIndicator = ({ progress, stage }) => (
 const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
   <div className="space-y-6">
     {/* File Info Card */}
-    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-5">
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="relative p-3 bg-blue-500 rounded-lg text-white shadow-md">
@@ -126,7 +124,7 @@ const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
       {isAnalyzing && (
         <div className="mt-4">
           <div className="w-full bg-gray-200 rounded-full h-1">
-            <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full animate-pulse"></div>
+            <div className="h-full bg-blue-500 rounded-full animate-pulse"></div>
           </div>
         </div>
       )}
@@ -238,6 +236,8 @@ const UploadPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadComplete, setUploadComplete] = useState(false);
   const [uploadStats, setUploadStats] = useState(null);
+  const [lastUpload, setLastUpload] = useState(null);
+  const [showTips, setShowTips] = useState(false);
 
   const resetState = () => {
     setSelectedFile(null);
@@ -249,6 +249,13 @@ const UploadPage = () => {
     setUploadComplete(false);
     setUploadStats(null);
   };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('lastUploadStats');
+      if (raw) setLastUpload(JSON.parse(raw));
+    } catch {}
+  }, []);
 
   const handleFileSelection = (event) => {
     const file = event.target.files[0];
@@ -486,42 +493,29 @@ const UploadPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center gap-3 bg-white px-6 py-3 rounded-2xl shadow-lg border border-gray-200">
-            <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg">
-              <Upload className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-blue-50 p-3 md:p-4">
+      <div className="max-w-5xl mx-auto space-y-4">
+        {/* Compact Header */}
+        <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-blue-600 rounded-md">
+              <Upload className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-800">อัปโหลดไฟล์ข้อมูล</h1>
-              <p className="text-sm text-gray-600">ระบบประมวลผลอัจฉริยะ</p>
-            </div>
+            <h1 className="text-base font-semibold text-gray-800">อัปโหลดไฟล์ข้อมูล</h1>
           </div>
-
-          <div className="flex items-center justify-center gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-1">
-              <Shield className="w-4 h-4 text-green-500" />
-              <span>ปลอดภัย</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Zap className="w-4 h-4 text-blue-500" />
-              <span>รวดเร็ว</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500" />
-              <span>สูงสุด 500MB</span>
-            </div>
+          <div className="hidden sm:flex items-center gap-3 text-xs text-gray-600">
+            <span className="flex items-center gap-1"><Shield className="w-4 h-4 text-green-500"/> ปลอดภัย</span>
+            <span className="flex items-center gap-1"><Zap className="w-4 h-4 text-blue-500"/> รวดเร็ว</span>
+            <span className="flex items-center gap-1"><Star className="w-4 h-4 text-yellow-500"/> สูงสุด 500MB</span>
           </div>
         </div>
 
         {/* Main Upload Area */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-          <div className="p-6 md:p-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 md:p-6">
             {!selectedFile && (
               <div
-                className={`border-2 border-dashed rounded-xl p-8 md:p-12 text-center transition-all duration-300 ${dragActive
+                className={`border-2 border-dashed rounded-lg p-6 md:p-8 text-center transition-all duration-300 ${dragActive
                     ? 'border-blue-400 bg-blue-50 scale-[1.02]'
                     : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
                   }`}
@@ -531,7 +525,7 @@ const UploadPage = () => {
                 onDragLeave={() => setDragActive(false)}
               >
                 <div className="space-y-4">
-                  <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-100 to-indigo-200 rounded-2xl flex items-center justify-center shadow-lg">
+                  <div className="mx-auto w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center shadow">
                     <Upload className="w-8 h-8 text-blue-600" />
                   </div>
 
@@ -560,115 +554,80 @@ const UploadPage = () => {
                   />
                   <label
                     htmlFor="file-upload"
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 cursor-pointer transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors duration-200 font-semibold shadow"
                   >
                     <Upload className="w-4 h-4" />
                     เลือกไฟล์
                   </label>
+                </div>
+
+                {/* Quick actions */}
+                <div className="mt-4 flex items-center justify-center gap-3">
+                  <a
+                    href="/templates/access_log_template.csv"
+                    download
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-md border bg-white hover:bg-gray-50 text-sm"
+                  >
+                    <Download className="w-4 h-4"/> ดาวน์โหลดเทมเพลต CSV
+                  </a>
+                  <button onClick={() => setShowTips(v=>!v)} className="inline-flex items-center gap-2 px-3 py-2 rounded-md border bg-white hover:bg-gray-50 text-sm">
+                    <Info className="w-4 h-4"/> เคล็ดลับ
+                  </button>
                 </div>
               </div>
             )}
 
             {/* File Preview */}
             {selectedFile && (
-              <div className="space-y-6">
-                <FilePreview
-                  file={selectedFile}
-                  preview={filePreview}
-                  isAnalyzing={isAnalyzing}
-                  onRemove={resetState}
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="border-2 border-dashed rounded-lg p-4 text-center border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                  <div className="mb-2 text-sm font-medium text-gray-700">เลือกไฟล์ใหม่</div>
+                  <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileSelection} className="hidden" id="file-reupload" />
+                  <label htmlFor="file-reupload" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer text-sm">
+                    <Upload className="w-4 h-4" /> เลือกไฟล์
+                  </label>
+                  <div className="mt-2 text-xs text-gray-500">รองรับ .csv .xlsx .xls</div>
+                </div>
 
-                {/* Upload Button */}
-                {filePreview && !isUploading && !uploadComplete && (
-                  <div className="text-center space-y-3">
-                    <button
-                      onClick={handleUpload}
-                      className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-bold shadow-lg hover:shadow-xl transform hover:scale-105"
-                    >
-                      <Upload className="w-5 h-5" />
-                      เริ่มอัปโหลด
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                    <p className="text-sm text-gray-600">
-                      จะประมวลผล <span className="font-bold text-blue-600">
-                        {new Intl.NumberFormat('th-TH').format(filePreview.totalRows)}
-                      </span> รายการ ใช้เวลาประมาณ <span className="font-bold text-purple-600">
-                        {filePreview.estimatedTime}
-                      </span>
-                    </p>
-                  </div>
-                )}
+                <div className="space-y-4">
+                  <FilePreview file={selectedFile} preview={filePreview} isAnalyzing={isAnalyzing} onRemove={resetState} />
 
-                {/* Upload Progress */}
-                {isUploading && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-                    <ProgressIndicator
-                      progress={uploadProgress}
-                      stage={getProgressStage(uploadProgress)}
-                    />
-                  </div>
-                )}
-
-                {/* Success Message */}
-                {uploadComplete && uploadStats && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2 bg-green-500 rounded-lg">
-                        <CheckCircle className="w-6 h-6 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-green-800">🎉 อัปโหลดสำเร็จ!</h3>
-                        <p className="text-green-700">
-                          ประมวลผลข้อมูล <span className="font-bold">
-                            {new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)}
-                          </span> รายการเรียบร้อยแล้ว
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <StatCard
-                        icon={<Clock />}
-                        label="เวลาประมวลผล"
-                        value={uploadStats.processingTime}
-                        color="green"
-                        size="normal"
-                      />
-                      <StatCard
-                        icon={<TrendingUp />}
-                        label="อัตราสำเร็จ"
-                        value={uploadStats.successRate}
-                        color="green"
-                        size="normal"
-                      />
-                      <StatCard
-                        icon={<Database />}
-                        label="จำนวนข้อมูล"
-                        value={new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)}
-                        color="blue"
-                        size="normal"
-                      />
-                      <StatCard
-                        icon={<BarChart3 />}
-                        label="คุณภาพข้อมูล"
-                        value={uploadStats.dataQuality}
-                        color="purple"
-                        size="normal"
-                      />
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-green-200">
-                      <button
-                        onClick={resetState}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-green-300 text-green-700 rounded-lg hover:bg-green-50 transition-colors font-medium"
-                      >
-                        <Upload className="w-4 h-4" />
-                        อัปโหลดไฟล์ใหม่
+                  {filePreview && !isUploading && !uploadComplete && (
+                    <div className="text-center space-y-2">
+                      <button onClick={handleUpload} className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 font-semibold shadow-sm">
+                        <Upload className="w-5 h-5" /> เริ่มอัปโหลด <ArrowRight className="w-4 h-4" />
                       </button>
+                      <p className="text-sm text-gray-600">จะประมวลผล <span className="font-bold text-blue-600">{new Intl.NumberFormat('th-TH').format(filePreview.totalRows)}</span> รายการ ใช้เวลาประมาณ <span className="font-bold text-purple-600">{filePreview.estimatedTime}</span></p>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {isUploading && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <ProgressIndicator progress={uploadProgress} stage={getProgressStage(uploadProgress)} />
+                    </div>
+                  )}
+
+                  {uploadComplete && uploadStats && (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 bg-green-500 rounded-lg"><CheckCircle className="w-6 h-6 text-white" /></div>
+                        <div>
+                          <h3 className="text-base font-bold text-green-800">🎉 อัปโหลดสำเร็จ!</h3>
+                          <p className="text-green-700">ประมวลผลข้อมูล <span className="font-bold">{new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)}</span> รายการเรียบร้อยแล้ว</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <StatCard icon={<Clock />} label="เวลาประมวลผล" value={uploadStats.processingTime} color="green" size="normal" />
+                        <StatCard icon={<Database />} label="จำนวนข้อมูล" value={new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)} color="blue" size="normal" />
+                      </div>
+                      <div className="mt-3 text-right">
+                        <button onClick={resetState} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-green-300 text-green-700 rounded-md hover:bg-green-50 transition-colors text-sm">
+                          <Upload className="w-4 h-4" /> อัปโหลดไฟล์ใหม่
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -687,14 +646,30 @@ const UploadPage = () => {
           </div>
         </div>
 
-        {/* Tips Section */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles className="w-5 h-5 text-amber-600" />
-            <h3 className="font-bold text-amber-800">💡 เคล็ดลับการใช้งาน</h3>
+        {/* Last upload summary */}
+        {!selectedFile && lastUpload && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-700">อัปโหลดล่าสุด</div>
+              <div className="text-xs text-gray-500">{new Date(lastUpload.uploadTime).toLocaleString('th-TH')}</div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><div className="text-gray-500">ไฟล์</div><div className="font-medium text-gray-800 truncate">{lastUpload.fileName}</div></div>
+              <div><div className="text-gray-500">ขนาด</div><div className="font-medium text-gray-800">{lastUpload.fileSize || '-'}</div></div>
+              <div><div className="text-gray-500">จำนวนข้อมูล</div><div className="font-medium text-gray-800">{new Intl.NumberFormat('th-TH').format(lastUpload.totalRecords || 0)}</div></div>
+              <div><div className="text-gray-500">เวลาประมวลผล</div><div className="font-medium text-gray-800">{lastUpload.processingTime || '-'}</div></div>
+            </div>
           </div>
+        )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Tips Section (collapsible) */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg">
+          <button onClick={() => setShowTips(v => !v)} className="w-full flex items-center justify-between px-4 py-2 text-amber-800 font-semibold">
+            <span className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-amber-600"/> เคล็ดลับการใช้งาน</span>
+            <ChevronDown className={`w-4 h-4 transition-transform ${showTips ? 'rotate-180' : ''}`} />
+          </button>
+          {showTips && (
+          <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-3">
               <div className="flex items-start gap-2">
                 <div className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-2"></div>
@@ -728,6 +703,7 @@ const UploadPage = () => {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

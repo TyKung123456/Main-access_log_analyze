@@ -3,8 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locationData = [] }) => {
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const [viewMode, setViewMode] = useState('overview'); // 'overview', 'trends', 'locations'
+  const [viewMode, setViewMode] = useState('overview'); // 'overview', 'trends'
 
   // Enhanced data processing
   const chartData = useMemo(() => {
@@ -26,12 +25,15 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
   const hourlyTrends = useMemo(() => {
     if (!timeSeriesData || timeSeriesData.length === 0) {
       // Generate mock hourly data for demonstration
-      return Array.from({ length: 24 }, (_, hour) => ({
-        hour: `${hour.toString().padStart(2, '0')}:00`,
-        IN: Math.floor(Math.random() * 1000) + 200,
-        OUT: Math.floor(Math.random() * 1000) + 200,
-        total: 0
-      })).map(item => ({
+      return Array.from({ length: 12 }, (_, hour) => {
+        const realHour = hour + 6; // Start from 6 AM to 6 PM
+        return {
+          hour: `${realHour.toString().padStart(2, '0')}:00`,
+          IN: Math.floor(Math.random() * 800) + 200,
+          OUT: Math.floor(Math.random() * 800) + 200,
+          total: 0
+        };
+      }).map(item => ({
         ...item,
         total: item.IN + item.OUT,
         ratio: item.OUT > 0 ? (item.IN / item.OUT).toFixed(2) : 'N/A'
@@ -40,22 +42,8 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
     return timeSeriesData;
   }, [timeSeriesData]);
 
-  // Process location-direction analysis
-  const locationAnalysis = useMemo(() => {
-    if (!locationData || locationData.length === 0) {
-      // Generate mock data for demonstration
-      return [
-        { location: 'สำนักงานใหญ่ ชั้น 8', IN: 21500, OUT: 21575, ratio: 1.00, trend: 'balanced' },
-        { location: 'สำนักงานใหญ่ ชั้น 5', IN: 15400, OUT: 15591, ratio: 1.01, trend: 'slightly_out' },
-        { location: 'สำนักงานใหญ่ ชั้น 6', IN: 7200, OUT: 7517, ratio: 1.04, trend: 'out_heavy' },
-        { location: 'อาคารถนนศรีอยุธยา ชั้น 6', IN: 7100, OUT: 7376, ratio: 1.04, trend: 'out_heavy' },
-        { location: 'อาคารถนนศรีอยุธยา ชั้น 7', IN: 6000, OUT: 6230, ratio: 1.04, trend: 'out_heavy' }
-      ];
-    }
-    return locationData;
-  }, [locationData]);
-
-  const COLORS = ['#1E40AF', '#059669', '#DC2626', '#7C3AED', '#EA580C'];
+  // Simplified color scheme - only 2 colors needed
+  const COLORS = ['#10B981', '#EF4444']; // Green for IN, Red for OUT
 
   // Calculate enhanced statistics
   const stats = useMemo(() => {
@@ -71,12 +59,18 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
 
     // Determine traffic pattern
     let trafficPattern = 'สมดุล';
-    if (ratio < 0.9) trafficPattern = 'ออกมากกว่าเข้า';
-    else if (ratio > 1.1) trafficPattern = 'เข้ามากกว่าออก';
+    let patternIcon = '⚖️';
+    if (ratio < 0.9) {
+      trafficPattern = 'ออกมากกว่าเข้า';
+      patternIcon = '📤';
+    } else if (ratio > 1.1) {
+      trafficPattern = 'เข้ามากกว่าออก';
+      patternIcon = '📥';
+    }
 
     return {
       total, inCount, outCount, ratio: ratio.toFixed(2),
-      balance, balancePercentage, trafficPattern
+      balance, balancePercentage, trafficPattern, patternIcon
     };
   }, [chartData]);
 
@@ -139,19 +133,18 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
           </div>
         </div>
 
-        {/* View Mode Selector */}
+        {/* Simplified View Mode Selector - แค่ 2 โหมด */}
         <div className="flex bg-gray-100 rounded-lg p-1 mb-4">
           {[
             { id: 'overview', label: '📊 ภาพรวม', desc: 'สัดส่วนและสถิติ' },
-            { id: 'trends', label: '📈 แนวโน้มรายชั่วโมง', desc: 'รูปแบบตลอดวัน' },
-            { id: 'locations', label: '📍 แยกตามสถานที่', desc: 'วิเคราะห์ตามพื้นที่' }
+            { id: 'trends', label: '📈 แนวโน้ม', desc: 'รูปแบบตลอดวัน' }
           ].map(mode => (
             <button
               key={mode.id}
               onClick={() => setViewMode(mode.id)}
-              className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === mode.id
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-800'
+              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === mode.id
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
                 }`}
               title={mode.desc}
             >
@@ -164,68 +157,80 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
       {/* Content based on view mode */}
       {viewMode === 'overview' && (
         <>
-          {/* Traffic Pattern Analysis */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-white/70 rounded-lg p-4 border border-blue-100/50">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">รูปแบบการจราจร</h4>
-              <div className="text-lg font-bold text-blue-600">{stats.trafficPattern}</div>
-              <div className="text-xs text-gray-500 mt-1">
-                อัตราส่วน IN:OUT = {stats.ratio}:1
-              </div>
-            </div>
-            <div className="bg-white/70 rounded-lg p-4 border border-green-100/50">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">ความไม่สมดุล</h4>
-              <div className="text-lg font-bold text-green-600">{stats.balancePercentage}%</div>
-              <div className="text-xs text-gray-500 mt-1">
-                ส่วนต่าง {stats.balance.toLocaleString('th-TH')} ครั้ง
-              </div>
+          {/* Main Traffic Pattern Card */}
+          <div className="bg-white/70 rounded-lg p-6 border border-blue-100/50 mb-6 text-center">
+            <div className="text-4xl mb-2">{stats.patternIcon}</div>
+            <h4 className="text-lg font-bold text-gray-800 mb-1">{stats.trafficPattern}</h4>
+            <div className="text-sm text-gray-600">
+              อัตราส่วน IN:OUT = {stats.ratio}:1 | ความไม่สมดุล {stats.balancePercentage}%
             </div>
           </div>
 
-          {/* Pie Chart */}
-          <div className="bg-white/50 rounded-lg p-4 border border-white/50 mb-4">
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  innerRadius={40}
-                  fill="#8884d8"
-                  dataKey="value"
-                  stroke="#fff"
-                  strokeWidth={3}
-                >
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => [`${value.toLocaleString('th-TH')} ครั้ง`]} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          </div>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-blue-600 font-medium">การเข้า (IN)</div>
-                  <div className="text-lg font-bold text-blue-800">{stats.inCount.toLocaleString('th-TH')}</div>
-                </div>
-                <div className="text-2xl">🔵</div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Pie Chart */}
+            <div className="bg-white/50 rounded-lg p-4 border border-white/50">
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={chartData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      innerRadius={40}
+                      fill="#8884d8"
+                      dataKey="value"
+                      stroke="#fff"
+                      strokeWidth={4}
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value, name) => [
+                        `${value.toLocaleString('th-TH')} ครั้ง`,
+                        name
+                      ]}
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        border: '2px solid #e5e7eb',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 25px -3px rgba(0, 0, 0, 0.1)',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
             </div>
-            <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-green-600 font-medium">การออก (OUT)</div>
-                  <div className="text-lg font-bold text-green-800">{stats.outCount.toLocaleString('th-TH')}</div>
+
+            {/* Stats Cards */}
+            <div className="space-y-4">
+              <div className="bg-emerald-50 rounded-lg p-6 border border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-emerald-600 font-medium mb-1">การเข้า (IN)</div>
+                    <div className="text-3xl font-bold text-emerald-800">{stats.inCount.toLocaleString('th-TH')}</div>
+                    <div className="text-sm text-emerald-600 mt-1">
+                      {stats.total > 0 ? ((stats.inCount / stats.total) * 100).toFixed(1) : 0}% ของทั้งหมด
+                    </div>
+                  </div>
+                  <div className="text-4xl">📥</div>
                 </div>
-                <div className="text-2xl">🟢</div>
+              </div>
+
+              <div className="bg-red-50 rounded-lg p-6 border border-red-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-red-600 font-medium mb-1">การออก (OUT)</div>
+                    <div className="text-3xl font-bold text-red-800">{stats.outCount.toLocaleString('th-TH')}</div>
+                    <div className="text-sm text-red-600 mt-1">
+                      {stats.total > 0 ? ((stats.outCount / stats.total) * 100).toFixed(1) : 0}% ของทั้งหมด
+                    </div>
+                  </div>
+                  <div className="text-4xl">📤</div>
+                </div>
               </div>
             </div>
           </div>
@@ -234,96 +239,80 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
 
       {viewMode === 'trends' && (
         <div className="bg-white/50 rounded-lg p-4 border border-white/50">
-          <div className="mb-4">
-            <h4 className="text-lg font-semibold text-gray-800 mb-2">รูปแบบการเข้าถึงตลอด 24 ชั่วโมง</h4>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
-                <div className="text-sm text-orange-600 font-medium">ช่วงเวลาเร่งด่วน</div>
-                <div className="text-lg font-bold text-orange-800">
-                  {peakAnalysis.peakHour?.hour} ({peakAnalysis.peakHour?.total.toLocaleString('th-TH')} ครั้ง)
+          <div className="mb-6">
+            <h4 className="text-lg font-semibold text-gray-800 mb-4">รูปแบบการเข้าถึงตลอดวัน</h4>
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <div className="text-sm text-orange-600 font-medium mb-1">🔥 ช่วงเวลาเร่งด่วน</div>
+                <div className="text-xl font-bold text-orange-800">
+                  {peakAnalysis.peakHour?.hour}
+                </div>
+                <div className="text-sm text-orange-600">
+                  {peakAnalysis.peakHour?.total.toLocaleString('th-TH')} ครั้ง
                 </div>
               </div>
-              <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
-                <div className="text-sm text-purple-600 font-medium">ช่วงเวลาเงียบ</div>
-                <div className="text-lg font-bold text-purple-800">
-                  {peakAnalysis.lowHour?.hour} ({peakAnalysis.lowHour?.total.toLocaleString('th-TH')} ครั้ง)
+              <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                <div className="text-sm text-purple-600 font-medium mb-1">😴 ช่วงเวลาเงียบ</div>
+                <div className="text-xl font-bold text-purple-800">
+                  {peakAnalysis.lowHour?.hour}
+                </div>
+                <div className="text-sm text-purple-600">
+                  {peakAnalysis.lowHour?.total.toLocaleString('th-TH')} ครั้ง
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="h-64">
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlyTrends.slice(0, 12)} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(value, name) => [`${value.toLocaleString('th-TH')} ครั้ง`, name === 'IN' ? 'เข้า' : 'ออก']}
-                  labelFormatter={(label) => `เวลา ${label}`}
+              <BarChart data={hourlyTrends} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.6} />
+                <XAxis
+                  dataKey="hour"
+                  tick={{ fontSize: 11, fill: '#64748b', fontWeight: 'bold' }}
+                  tickLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
+                  axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                 />
-                <Bar dataKey="IN" fill="#1E40AF" name="IN" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="OUT" fill="#059669" name="OUT" radius={[2, 2, 0, 0]} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748b', fontWeight: 'bold' }}
+                  tickLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
+                  axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
+                  tickFormatter={(value) => value.toLocaleString('th-TH')}
+                />
+                <Tooltip
+                  formatter={(value, name) => [
+                    `${value.toLocaleString('th-TH')} ครั้ง`,
+                    name === 'IN' ? '📥 เข้า' : '📤 ออก'
+                  ]}
+                  labelFormatter={(label, payload) => {
+                    const total = payload?.reduce((sum, item) => sum + (item.value || 0), 0) || 0;
+                    return `🕐 เวลา ${label} (รวม: ${total.toLocaleString('th-TH')} ครั้ง)`;
+                  }}
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px -3px rgba(0, 0, 0, 0.1)',
+                    fontSize: '14px',
+                    maxWidth: '300px'
+                  }}
+                />
+                <Bar dataKey="IN" fill="#10B981" name="IN" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="OUT" fill="#EF4444" name="OUT" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
-      )}
 
-      {viewMode === 'locations' && (
-        <div className="bg-white/50 rounded-lg p-4 border border-white/50">
-          <h4 className="text-lg font-semibold text-gray-800 mb-4">การวิเคราะห์แยกตามสถานที่</h4>
-          <div className="space-y-3">
-            {locationAnalysis.map((location, index) => {
-              const total = location.IN + location.OUT;
-              const inPercentage = ((location.IN / total) * 100).toFixed(1);
-              const outPercentage = ((location.OUT / total) * 100).toFixed(1);
-
-              return (
-                <div key={index} className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h5 className="font-medium text-gray-800">{location.location}</h5>
-                      <div className="text-sm text-gray-500">รวม {total.toLocaleString('th-TH')} ครั้ง</div>
-                    </div>
-                    <div className={`px-2 py-1 rounded text-xs font-medium ${location.trend === 'balanced' ? 'bg-green-100 text-green-800' :
-                        location.trend === 'out_heavy' ? 'bg-orange-100 text-orange-800' :
-                          'bg-blue-100 text-blue-800'
-                      }`}>
-                      {location.trend === 'balanced' ? '⚖️ สมดุล' :
-                        location.trend === 'out_heavy' ? '📤 ออกมาก' : '📥 เข้ามาก'}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div className="text-center">
-                      <div className="text-blue-600 font-semibold">{location.IN.toLocaleString('th-TH')}</div>
-                      <div className="text-gray-500">เข้า ({inPercentage}%)</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-green-600 font-semibold">{location.OUT.toLocaleString('th-TH')}</div>
-                      <div className="text-gray-500">ออก ({outPercentage}%)</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-purple-600 font-semibold">{location.ratio}</div>
-                      <div className="text-gray-500">อัตราส่วน</div>
-                    </div>
-                  </div>
-
-                  {/* Progress bars */}
-                  <div className="mt-3 flex gap-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="bg-blue-500"
-                      style={{ width: `${inPercentage}%` }}
-                    ></div>
-                    <div
-                      className="bg-green-500"
-                      style={{ width: `${outPercentage}%` }}
-                    ></div>
-                  </div>
-                </div>
-              );
-            })}
+          {/* Legend */}
+          <div className="flex justify-center mt-4 space-x-6">
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-emerald-500 rounded mr-2"></div>
+              <span className="text-sm font-medium text-gray-700">📥 การเข้า</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-red-500 rounded mr-2"></div>
+              <span className="text-sm font-medium text-gray-700">📤 การออก</span>
+            </div>
           </div>
         </div>
       )}

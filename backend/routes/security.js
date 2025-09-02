@@ -45,6 +45,282 @@ router.get('/anomalies', async (req, res) => {
   }
 });
 
+// ================================
+// 📋 Case-based Security Reports
+// ================================
+
+const CASE_SQL = {
+  // 1) OUT=TRUE without prior IN for same user
+  unmatched_out: `WITH base AS (
+    SELECT r.*, 
+      SUM(CASE WHEN r."Direction"='IN' AND r."Allow" THEN 1 ELSE 0 END)
+        OVER (PARTITION BY r."User Hash" ORDER BY r."Date Time", r."Transaction ID" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS seq_in,
+      SUM(CASE WHEN r."Direction"='OUT' AND r."Allow" THEN 1 ELSE 0 END)
+        OVER (PARTITION BY r."User Hash" ORDER BY r."Date Time", r."Transaction ID" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS seq_out
+    FROM public."real_log_analyze" r
+  ),
+  ins AS (
+    SELECT "User Hash", seq_in AS pair_no, "Date Time" AS in_time
+    FROM base
+    WHERE "Direction"='IN' AND "Allow"=TRUE
+  ),
+  outs AS (
+    SELECT "User Hash", seq_out AS pair_no, "Date Time" AS out_time,
+           "Transaction ID" AS out_txid, "Device" AS out_device,
+           "Location" AS out_location, "Door" AS out_door, "Permission" AS out_permission
+    FROM base
+    WHERE "Direction"='OUT' AND "Allow"=TRUE
+  )
+  SELECT o."User Hash", o.pair_no, o.out_txid, o.out_time, o.out_device, o.out_location, o.out_door, o.out_permission
+  FROM outs o LEFT JOIN ins i ON i."User Hash"=o."User Hash" AND i.pair_no=o.pair_no
+  WHERE i."User Hash" IS NULL
+  ORDER BY o."User Hash", o.out_time` ,
+
+  // 1.1) Count unmatched OUT per user
+  unmatched_out_counts: `WITH ordered AS (
+    SELECT r.*,
+      SUM(CASE WHEN r."Direction"='IN'  AND r."Allow" THEN 1 ELSE 0 END)
+        OVER (PARTITION BY r."User Hash" ORDER BY r."Date Time", r."Transaction ID" ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS cum_in_before,
+      SUM(CASE WHEN r."Direction"='OUT' AND r."Allow" THEN 1 ELSE 0 END)
+        OVER (PARTITION BY r."User Hash" ORDER BY r."Date Time", r."Transaction ID" ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS cum_out_before
+    FROM public."real_log_analyze" r
+  ),
+  unmatched_out AS (
+    SELECT * FROM ordered
+    WHERE "Direction"='OUT' AND "Allow"=TRUE
+      AND COALESCE(cum_in_before,0) <= COALESCE(cum_out_before,0)
+  )
+  SELECT "User Hash",
+         MIN("Card Name") AS sample_card_name,
+         COUNT(*) AS unmatched_out_count,
+         MIN("Date Time") AS first_unmatched_out_at,
+         MAX("Date Time") AS last_unmatched_out_at,
+         MIN("Transaction ID") AS sample_txid
+  FROM unmatched_out
+  GROUP BY "User Hash"
+  ORDER BY unmatched_out_count DESC, "User Hash"`,
+
+  // 2) Visitor/Affiliate IN when no employees inside
+  visitor_in_no_employees: `WITH emp_events AS (
+    SELECT e."Date Time" AS ts, e."Transaction ID" AS txid,
+      CASE WHEN e."Allow"=TRUE AND e."Direction"='IN' THEN 1
+           WHEN e."Allow"=TRUE AND e."Direction"='OUT' THEN -1 ELSE 0 END AS delta
+    FROM public."real_log_analyze" e
+    WHERE lower(e."User Type")='employee' AND e."Direction" IN ('IN','OUT') AND e."Allow"=TRUE
+  ), emp_running AS (
+    SELECT ts, txid, delta,
+      SUM(delta) OVER (ORDER BY ts, txid ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS emp_inside_cum
+    FROM emp_events
+  ), visitor_entries AS (
+    SELECT r.* FROM public."real_log_analyze" r
+    WHERE lower(r."User Type") IN ('visitor','affiliate') AND r."Direction"='IN' AND r."Allow"=TRUE
+  )
+  SELECT v.*, COALESCE(le.emp_inside_cum,0) AS employee_inside_before
+  FROM visitor_entries v
+  LEFT JOIN LATERAL (
+    SELECT e.emp_inside_cum FROM emp_running e
+    WHERE e.ts < v."Date Time" OR (e.ts = v."Date Time" AND e.txid < v."Transaction ID")
+    ORDER BY e.ts DESC, e.txid DESC LIMIT 1
+  ) le ON TRUE
+  WHERE COALESCE(le.emp_inside_cum,0)=0
+  ORDER BY "Date Time", "Transaction ID"`,
+
+  // 3) Door-Device-Location ambiguity
+  door_device_location_ambiguity: `WITH base AS (
+    SELECT btrim("Door") AS door, btrim("Device") AS device, btrim("Location") AS location
+    FROM public."real_log_analyze"
+    WHERE "Door" IS NOT NULL AND btrim("Door")<>''
+      AND "Device" IS NOT NULL AND btrim("Device")<>''
+      AND "Location" IS NOT NULL AND btrim("Location")<>''
+  ), amb_door AS (
+    SELECT door FROM base GROUP BY door
+    HAVING COUNT(DISTINCT device) > 1 OR COUNT(DISTINCT location) > 1
+  )
+  SELECT door, device, location, COUNT(*) AS events
+  FROM base WHERE door IN (SELECT door FROM amb_door)
+  GROUP BY door, device, location
+  ORDER BY door, events DESC, device, location` ,
+
+  // 5) Allow=false but Reason empty
+  denied_without_reason: `SELECT *
+  FROM public."real_log_analyze"
+  WHERE "Allow" = FALSE
+    AND ("Reason" IS NULL OR btrim("Reason") = '')
+  ORDER BY "Date Time"`,
+
+  // 6) Allow=true but Permission empty
+  allowed_without_permission: `SELECT *
+  FROM public."real_log_analyze"
+  WHERE "Allow" = TRUE
+    AND ("Permission" IS NULL OR btrim("Permission") = '')
+  ORDER BY "Date Time"`,
+
+  // 7) Card used >5 times in 10 minutes (risky)
+  high_frequency_card: `WITH freq_10 AS (
+    SELECT "Card Number Hash" AS card_hash,
+           date_trunc('hour', "Date Time") + make_interval(mins => (floor(extract(minute from "Date Time")/10)::int * 10)) AS bucket_start,
+           COUNT(*) AS cnt
+    FROM public."real_log_analyze"
+    GROUP BY 1,2
+    HAVING COUNT(*) > 5
+  )
+  SELECT r.*
+  FROM public."real_log_analyze" r
+  JOIN freq_10 f ON r."Card Number Hash" = f.card_hash
+    AND (date_trunc('hour', r."Date Time") + make_interval(mins => (floor(extract(minute from r."Date Time")/10)::int * 10))) = f.bucket_start
+  ORDER BY r."Card Number Hash", r."Date Time"`,
+
+  // 8) Same Permission used across different User Types
+  permission_multi_usertype: `WITH perm_ut AS (
+    SELECT "Permission", COUNT(DISTINCT "User Type") AS ut_count
+    FROM public."real_log_analyze"
+    WHERE "Permission" IS NOT NULL AND btrim("Permission") <> ''
+    GROUP BY 1
+    HAVING COUNT(DISTINCT "User Type") > 1
+  )
+  SELECT r.*
+  FROM public."real_log_analyze" r
+  JOIN perm_ut p ON r."Permission" = p."Permission"
+  ORDER BY r."Permission", r."Date Time"`,
+
+  // 9) Missing device or location
+  missing_device_or_location: `SELECT *
+  FROM public."real_log_analyze"
+  WHERE ("Device" IS NULL OR btrim("Device") = '')
+     OR ("Location" IS NULL OR btrim("Location") = '')
+  ORDER BY "Date Time"`,
+
+  // 10) Cards that never allowed true
+  cards_never_allowed: `WITH never_ok AS (
+    SELECT "Card Number Hash" AS card_hash
+    FROM public."real_log_analyze"
+    WHERE "Card Number Hash" IS NOT NULL
+    GROUP BY "Card Number Hash"
+    HAVING SUM(CASE WHEN "Allow" THEN 1 ELSE 0 END) = 0
+  )
+  SELECT n.card_hash,
+         MIN(r."Card Name") AS sample_card_name,
+         MIN(r."User Hash") AS sample_user_hash,
+         COUNT(r.*) AS total_logs,
+         MIN(r."Date Time") AS first_seen,
+         MAX(r."Date Time") AS last_seen,
+         MIN(r."Transaction ID") AS sample_txid
+  FROM never_ok n
+  JOIN public."real_log_analyze" r ON r."Card Number Hash" = n.card_hash
+  GROUP BY n.card_hash
+  ORDER BY total_logs DESC, n.card_hash`,
+
+  // 11) Duplicate Transaction ID with conflicting Allow
+  txid_conflict: `SELECT "Transaction ID" AS txid
+  FROM public."real_log_analyze"
+  GROUP BY "Transaction ID"
+  HAVING COUNT(*) > 1 AND COUNT(DISTINCT "Allow") > 1
+  ORDER BY txid`,
+
+  // 12) Card Name repeats across different User Hash
+  cardname_multi_userhash: `WITH cn_uh AS (
+    SELECT "Card Name", COUNT(DISTINCT "User Hash") AS uh_count
+    FROM public."real_log_analyze"
+    WHERE "Card Name" IS NOT NULL AND btrim("Card Name") <> ''
+    GROUP BY 1
+    HAVING COUNT(DISTINCT "User Hash") > 1
+  )
+  SELECT r.*
+  FROM public."real_log_analyze" r
+  JOIN cn_uh c ON r."Card Name" = c."Card Name"
+  ORDER BY r."Card Name", r."Date Time"`,
+
+  // 13) Permission-Door pairs never allowed
+  permission_door_never_allowed: `WITH pairs AS (
+    SELECT "Permission","Door",
+           SUM(CASE WHEN "Allow" THEN 1 ELSE 0 END) AS allow_cnt,
+           COUNT(*) AS total_cnt
+    FROM public."real_log_analyze"
+    WHERE "Permission" IS NOT NULL AND btrim("Permission") <> ''
+      AND "Door" IS NOT NULL AND btrim("Door") <> ''
+    GROUP BY 1,2
+  )
+  SELECT r.*
+  FROM public."real_log_analyze" r
+  JOIN pairs p ON r."Permission" = p."Permission" AND r."Door" = p."Door"
+  WHERE p.allow_cnt = 0 AND p.total_cnt >= 3
+  ORDER BY r."Permission", r."Door", r."Date Time"`,
+
+  // 14) Same Channel used with different Devices within 5 minutes
+  channel_device_conflict: `WITH ch_5min AS (
+    SELECT "Channel",
+           date_trunc('hour', "Date Time") + make_interval(mins => (floor(extract(minute from "Date Time")/5)::int * 5)) AS bucket_start,
+           COUNT(DISTINCT "Device") AS device_count
+    FROM public."real_log_analyze"
+    WHERE "Channel" IS NOT NULL AND btrim("Channel") <> ''
+    GROUP BY 1,2
+    HAVING COUNT(DISTINCT "Device") > 1
+  )
+  SELECT r.*
+  FROM public."real_log_analyze" r
+  JOIN ch_5min c ON r."Channel" = c."Channel"
+   AND (date_trunc('hour', r."Date Time") + make_interval(mins => (floor(extract(minute from r."Date Time")/5)::int * 5))) = c.bucket_start
+  ORDER BY r."Channel", r."Date Time"`,
+
+  // Extra summary cases
+  top_failed_doors: `SELECT btrim("Door") AS door, COUNT(*) AS fail_count
+  FROM public."real_log_analyze" WHERE "Allow"=FALSE
+  GROUP BY btrim("Door")
+  ORDER BY fail_count DESC, door LIMIT 20`,
+
+  top_locations_events: `SELECT btrim("Location") AS location, COUNT(*) AS events
+  FROM public."real_log_analyze"
+  WHERE "Location" IS NOT NULL AND btrim("Location")<>''
+  GROUP BY btrim("Location")
+  ORDER BY events DESC, location LIMIT 20`,
+
+  daily_inout: `SELECT DATE("Date Time") AS day,
+    SUM(CASE WHEN "Direction"='IN' THEN 1 ELSE 0 END) AS in_events,
+    SUM(CASE WHEN "Direction"='OUT' THEN 1 ELSE 0 END) AS out_events,
+    SUM(CASE WHEN "Allow"=TRUE THEN 1 ELSE 0 END) AS ok_events,
+    SUM(CASE WHEN "Allow"=FALSE THEN 1 ELSE 0 END) AS denied_events
+  FROM public."real_log_analyze"
+  GROUP BY DATE("Date Time")
+  ORDER BY day`
+};
+
+// List cases
+router.get('/cases/list', async (req, res) => {
+  const list = [
+    { id: 'unmatched_out', title: 'OUT ไม่มีคู่ IN ก่อนหน้า', category: 'Access Flow' },
+    { id: 'unmatched_out_counts', title: 'สรุปจำนวน OUT ไม่มีคู่ ต่อคน', category: 'Access Flow' },
+    { id: 'visitor_in_no_employees', title: 'Visitor เข้าตอนไม่มีพนักงานอยู่', category: 'Policy' },
+    { id: 'door_device_location_ambiguity', title: 'Door/Device/Location ผิดปกติ', category: 'Data Quality' },
+    { id: 'denied_without_reason', title: 'ปฏิเสธ (Allow=false) แต่ Reason ว่าง', category: 'Data Quality' },
+    { id: 'allowed_without_permission', title: 'อนุญาต (Allow=true) แต่ Permission ว่าง', category: 'Policy' },
+    { id: 'high_frequency_card', title: 'บัตรถูกใช้ >5 ครั้งใน 10 นาที', category: 'Behavior' },
+    { id: 'permission_multi_usertype', title: 'Permission เดียวกัน ถูกใช้หลาย User Type', category: 'Policy' },
+    { id: 'missing_device_or_location', title: 'ข้อมูล Device/Location ว่าง', category: 'Data Quality' },
+    { id: 'cards_never_allowed', title: 'บัตรที่ไม่เคย Allow เลย', category: 'Access Effectiveness' },
+    { id: 'txid_conflict', title: 'Transaction ID ซ้ำแต่ Allow ต่างกัน', category: 'Integrity' },
+    { id: 'cardname_multi_userhash', title: 'Card Name ซ้ำหลาย User', category: 'Identity' },
+    { id: 'permission_door_never_allowed', title: 'Permission กับ Door ไม่เคย Allow', category: 'Policy' },
+    { id: 'channel_device_conflict', title: 'Channel เดียวกันใช้อุปกรณ์ต่างกันใน 5 นาที', category: 'Integrity' },
+    { id: 'top_failed_doors', title: 'ประตูที่เกิดความผิดพลาดมากที่สุด', category: 'Summary' },
+    { id: 'top_locations_events', title: 'สถานที่ที่มีเหตุการณ์มากที่สุด', category: 'Summary' },
+    { id: 'daily_inout', title: 'จำนวนเข้า–ออก รายวัน', category: 'Summary' },
+  ];
+  res.json({ cases: list });
+});
+
+// Execute a case
+router.get('/cases', async (req, res) => {
+  try {
+    const id = req.query.id;
+    if (!id || !CASE_SQL[id]) return res.status(400).json({ error: 'Unknown case id' });
+    const result = await query(CASE_SQL[id]);
+    res.json({ id, rows: result.rows, count: result.rowCount });
+  } catch (err) {
+    console.error('Case query error', err);
+    res.status(500).json({ error: 'Failed to run case query' });
+  }
+});
+
 // 1. 🚫 การพยายามเข้าถึงที่ล้มเหลวหลายครั้ง
 const detectMultipleFailedAttempts = async () => {
   const sqlQuery = `

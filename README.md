@@ -90,3 +90,16 @@ docker run -d -p 5173:5173 --name access-log-frontend access-log-analyzer-fronte
 4. ใช้คุณสมบัติการแชทสำหรับการโต้ตอบที่ขับเคลื่อนด้วย AI
 
 
+## Branding / โลโก้สนับสนุน
+สามารถกำหนดโลโก้ผู้สนับสนุนที่แสดงบน Header ได้ โดยตั้งค่าตัวแปรใน `.env` (ฝั่ง Frontend) ดังนี้
+
+```
+VITE_BRAND_LOGO_URL=https://your.cdn.example.com/path/to/logo.svg
+VITE_BRAND_NAME=Krungthai Bank
+```
+
+หมายเหตุ
+- หากไม่ตั้งค่า ระบบจะพยายามโหลดรูปจาก `public/ktb-logo.svg`
+- รองรับไฟล์ `.svg`, `.png`, `.jpg` จาก URL สาธารณะ
+- ขนาดที่เหมาะสมประมาณสูง 32–40 พิกเซล
+

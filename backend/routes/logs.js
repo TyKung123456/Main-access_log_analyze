@@ -9,7 +9,15 @@ const buildWhereClause = (params) => {
     let paramIndex = 1;
 
     if (params.search) {
-        conditions.push(`("Card Name" ILIKE $${paramIndex} OR "Location" ILIKE $${paramIndex} OR "Reason" ILIKE $${paramIndex})`);
+        // Enable searching across common fields, including Transaction ID
+        conditions.push(`(
+            CAST("Transaction ID" AS TEXT) ILIKE $${paramIndex}
+            OR "Card Name" ILIKE $${paramIndex}
+            OR "Location" ILIKE $${paramIndex}
+            OR "Reason" ILIKE $${paramIndex}
+            OR "Door" ILIKE $${paramIndex}
+            OR "Device" ILIKE $${paramIndex}
+        )`);
         values.push(`%${params.search}%`);
         paramIndex++;
     }
@@ -48,6 +56,22 @@ const buildWhereClause = (params) => {
             paramIndex++;
         }
     }
+    if (params.doors) {
+        const doors = Array.isArray(params.doors) ? params.doors : params.doors.split(',');
+        if (doors.length > 0) {
+            conditions.push(`"Door" = ANY($${paramIndex}::text[])`);
+            values.push(doors);
+            paramIndex++;
+        }
+    }
+    if (params.severities) {
+        const severities = Array.isArray(params.severities) ? params.severities : params.severities.split(',');
+        if (severities.length > 0) {
+            conditions.push(`"severity" = ANY($${paramIndex}::text[])`);
+            values.push(severities);
+            paramIndex++;
+        }
+    }
 
     return {
         clause: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -69,7 +93,7 @@ router.get('/', async (req, res) => {
         const totalResult = await query(`SELECT COUNT(*) FROM "public"."real_log_analyze" ${where.clause}`, where.values);
         const total = parseInt(totalResult.rows[0].count, 10);
         
-        const allowedSortColumns = ["Date Time", "Location", "Card Name", "User Type", "Direction", "Allow"];
+        const allowedSortColumns = ["Date Time", "Location", "Card Name", "User Type", "Direction", "Allow", "Transaction ID"];
         const sortColumn = allowedSortColumns.includes(sort) ? `"${sort}"` : `"Date Time"`;
         const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -143,6 +167,41 @@ router.get('/user-types', async (req, res) => {
         res.json({ userTypes: result.rows });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch user types' });
+    }
+});
+
+/**
+ * GET /api/logs/doors - Get distinct doors
+ */
+router.get('/doors', async (req, res) => {
+    try {
+        const result = await query(`
+            SELECT "Door" as value, "Door" as label, COUNT(*) as count 
+            FROM "public"."real_log_analyze" 
+            WHERE "Door" IS NOT NULL AND "Door" != '' 
+            GROUP BY 1, 2 ORDER BY 3 DESC
+        `);
+        res.json({ doors: result.rows });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch doors' });
+    }
+});
+
+/**
+ * GET /api/logs/severity-levels - Get distinct severity levels
+ */
+router.get('/severity-levels', async (req, res) => {
+    try {
+        const result = await query(`
+            SELECT "severity" as value, "severity" as label, COUNT(*) as count 
+            FROM "public"."real_log_analyze" 
+            WHERE "severity" IS NOT NULL AND "severity" != '' 
+            GROUP BY 1, 2 ORDER BY 3 DESC
+        `);
+        res.json({ severityLevels: result.rows });
+    } catch (error) {
+        console.error('Error fetching severity levels:', error);
+        res.status(500).json({ error: 'Failed to fetch severity levels' });
     }
 });
 

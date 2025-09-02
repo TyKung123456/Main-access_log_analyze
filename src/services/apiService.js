@@ -312,6 +312,14 @@ class ApiService {
     return this.request('/api/logs/devices');
   }
 
+  async getDoors() {
+    return this.request('/api/logs/doors');
+  }
+
+  async getSeverityLevels() {
+    return this.request('/api/logs/severity-levels');
+  }
+
   // Stats
   async getStats(params) {
     return this.request('/api/stats', 'GET', null, params);

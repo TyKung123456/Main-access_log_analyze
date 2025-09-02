@@ -3,9 +3,8 @@ import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const HourlyTrendChart = ({ data = [], loading = false }) => {
-  // State สำหรับเลือกดูเส้น
+  // State สำหรับเลือกดูเส้น - เริ่มต้นแสดงแค่ success และ denied
   const [visibleLines, setVisibleLines] = useState({
-    count: true,
     success: true,
     denied: true
   });
@@ -23,7 +22,6 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
   // หาค่าสูงสุดในข้อมูลเพื่อใช้ปรับ domain (เฉพาะเส้นที่แสดง)
   const maxValue = Math.max(
     ...chartData.map(item => Math.max(
-      visibleLines.count ? (parseInt(item.count) || 0) : 0,
       visibleLines.success ? (parseInt(item.success) || 0) : 0,
       visibleLines.denied ? (parseInt(item.denied) || 0) : 0
     ))
@@ -71,24 +69,20 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
             <p className="text-gray-500 text-sm">วิเคราะห์แนวโน้มการใช้งานตลอด 24 ชั่วโมง</p>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold text-blue-600">{totalCount.toLocaleString('th-TH')}</div>
-            <div className="text-xs text-gray-500">ครั้งทั้งหมด</div>
+            <div className="text-2xl font-bold text-green-600">{successRate}%</div>
+            <div className="text-xs text-gray-500">อัตราสำเร็จ</div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-white/70 rounded-lg p-3 border border-blue-100/50">
-            <div className="text-lg font-semibold text-green-600">{successRate}%</div>
-            <div className="text-xs text-gray-500">อัตราสำเร็จ</div>
+        {/* Stats Cards - เหลือแค่ 2 การ์ด */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="bg-white/70 rounded-lg p-4 border border-green-100/50">
+            <div className="text-2xl font-bold text-green-600">{totalSuccess.toLocaleString('th-TH')}</div>
+            <div className="text-sm text-gray-600 font-medium">เข้าถึงสำเร็จ</div>
           </div>
-          <div className="bg-white/70 rounded-lg p-3 border border-green-100/50">
-            <div className="text-lg font-semibold text-green-600">{totalSuccess.toLocaleString('th-TH')}</div>
-            <div className="text-xs text-gray-500">เข้าถึงสำเร็จ</div>
-          </div>
-          <div className="bg-white/70 rounded-lg p-3 border border-red-100/50">
-            <div className="text-lg font-semibold text-red-500">{totalDenied.toLocaleString('th-TH')}</div>
-            <div className="text-xs text-gray-500">ถูกปฏิเสธ</div>
+          <div className="bg-white/70 rounded-lg p-4 border border-red-100/50">
+            <div className="text-2xl font-bold text-red-500">{totalDenied.toLocaleString('th-TH')}</div>
+            <div className="text-sm text-gray-600 font-medium">ถูกปฏิเสธ</div>
           </div>
         </div>
       </div>
@@ -106,23 +100,12 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
           </div>
         </div>
       ) : (
-        <div className="h-64 bg-white/50 rounded-lg p-4 border border-white/50">
+        <div className="h-80 bg-white/50 rounded-lg p-4 border border-white/50">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
               margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
             >
-              <defs>
-                <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.1} />
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorSuccess" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.1} />
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="#e2e8f0"
@@ -132,16 +115,16 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
 
               <XAxis
                 dataKey="hour"
-                tick={{ fontSize: 11, fill: '#64748b' }}
-                tickLine={{ stroke: '#cbd5e1' }}
-                axisLine={{ stroke: '#e2e8f0' }}
+                tick={{ fontSize: 11, fill: '#64748b', fontWeight: 'bold' }}
+                tickLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
+                axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                 interval={1}
               />
 
               <YAxis
-                tick={{ fontSize: 11, fill: '#64748b' }}
-                tickLine={{ stroke: '#cbd5e1' }}
-                axisLine={{ stroke: '#e2e8f0' }}
+                tick={{ fontSize: 11, fill: '#64748b', fontWeight: 'bold' }}
+                tickLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
+                axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                 domain={[0, maxValue > 0 ? Math.ceil(maxValue * 1.1) : 100]}
                 tickFormatter={(value) => value.toLocaleString('th-TH')}
               />
@@ -149,42 +132,27 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
               <Tooltip
                 formatter={(value, name) => [
                   `${value.toLocaleString('th-TH')} ครั้ง`,
-                  name === 'count' ? 'การเข้าถึงทั้งหมด' :
-                    name === 'success' ? 'เข้าถึงสำเร็จ' :
-                      name === 'denied' ? 'ถูกปฏิเสธ' : name
+                  name === 'success' ? 'เข้าถึงสำเร็จ' :
+                    name === 'denied' ? 'ถูกปฏิเสธ' : name
                 ]}
-                labelFormatter={(label) => `🕐 เวลา ${label} น.`}
+                labelFormatter={(label, payload) => {
+                  const item = payload?.[0]?.payload;
+                  const total = (item?.success || 0) + (item?.denied || 0);
+                  const rate = total > 0 ? ((item?.success / total) * 100).toFixed(1) : 0;
+                  return `🕐 เวลา ${label} น. (รวม: ${total.toLocaleString('th-TH')} ครั้ง | อัตราสำเร็จ: ${rate}%)`;
+                }}
                 contentStyle={{
                   backgroundColor: '#ffffff',
-                  border: 'none',
+                  border: '2px solid #e5e7eb',
                   borderRadius: '12px',
                   boxShadow: '0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                  fontSize: '14px'
+                  fontSize: '14px',
+                  maxWidth: '400px'
                 }}
-                cursor={{ stroke: '#e2e8f0', strokeWidth: 1 }}
+                cursor={{ stroke: '#3B82F6', strokeWidth: 2, strokeOpacity: 0.5 }}
               />
 
               {/* เส้นกราฟ - แสดงเฉพาะที่เลือก */}
-              {visibleLines.count && (
-                <Line
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#3B82F6"
-                  strokeWidth={4}
-                  strokeOpacity={1}
-                  dot={{ fill: '#3B82F6', strokeWidth: 0, r: 6, fillOpacity: 1 }}
-                  activeDot={{
-                    r: 10,
-                    stroke: '#3B82F6',
-                    strokeWidth: 3,
-                    fill: '#ffffff',
-                    filter: 'drop-shadow(0px 2px 4px rgba(59, 130, 246, 0.3))'
-                  }}
-                  name="count"
-                  connectNulls={false}
-                />
-              )}
-
               {visibleLines.success && (
                 <Line
                   type="monotone"
@@ -192,14 +160,13 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
                   stroke="#10B981"
                   strokeWidth={4}
                   strokeOpacity={1}
-                  strokeDasharray="0"
-                  dot={{ fill: '#10B981', strokeWidth: 0, r: 5, fillOpacity: 1 }}
+                  dot={{ fill: '#10B981', strokeWidth: 2, stroke: '#ffffff', r: 5 }}
                   activeDot={{
                     r: 8,
                     stroke: '#10B981',
                     strokeWidth: 3,
                     fill: '#ffffff',
-                    filter: 'drop-shadow(0px 2px 4px rgba(16, 185, 129, 0.3))'
+                    filter: 'drop-shadow(0px 4px 8px rgba(16, 185, 129, 0.4))'
                   }}
                   name="success"
                 />
@@ -210,16 +177,15 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
                   type="monotone"
                   dataKey="denied"
                   stroke="#EF4444"
-                  strokeWidth={3}
+                  strokeWidth={4}
                   strokeOpacity={1}
-                  strokeDasharray="8 4"
-                  dot={{ fill: '#EF4444', strokeWidth: 0, r: 4, fillOpacity: 1 }}
+                  dot={{ fill: '#EF4444', strokeWidth: 2, stroke: '#ffffff', r: 5 }}
                   activeDot={{
-                    r: 7,
+                    r: 8,
                     stroke: '#EF4444',
                     strokeWidth: 3,
                     fill: '#ffffff',
-                    filter: 'drop-shadow(0px 2px 4px rgba(239, 68, 68, 0.3))'
+                    filter: 'drop-shadow(0px 4px 8px rgba(239, 68, 68, 0.4))'
                   }}
                   name="denied"
                 />
@@ -229,40 +195,42 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
         </div>
       )}
 
-      {/* Interactive Legend */}
+      {/* Simplified Legend */}
       <div className="flex justify-center mt-6 space-x-8">
         <div
-          className={`flex items-center group cursor-pointer transition-all duration-200 px-3 py-2 rounded-lg ${visibleLines.count ? 'bg-blue-50 border-blue-200' : 'bg-gray-100 border-gray-200'
-            } border`}
-          onClick={() => toggleLine('count')}
-        >
-          <div className={`w-4 h-4 rounded-full mr-3 transition-all duration-200 ${visibleLines.count ? 'bg-blue-500 scale-110' : 'bg-gray-400'
-            }`}></div>
-          <span className={`text-sm font-medium transition-colors duration-200 ${visibleLines.count ? 'text-blue-700' : 'text-gray-500'
-            }`}>การเข้าถึงทั้งหมด</span>
-        </div>
-
-        <div
-          className={`flex items-center group cursor-pointer transition-all duration-200 px-3 py-2 rounded-lg ${visibleLines.success ? 'bg-green-50 border-green-200' : 'bg-gray-100 border-gray-200'
-            } border`}
+          className={`flex items-center group cursor-pointer transition-all duration-200 px-4 py-3 rounded-lg ${visibleLines.success ? 'bg-green-50 border-green-200 shadow-sm' : 'bg-gray-100 border-gray-200'
+            } border-2`}
           onClick={() => toggleLine('success')}
         >
           <div className={`w-4 h-4 rounded-full mr-3 transition-all duration-200 ${visibleLines.success ? 'bg-green-500 scale-110' : 'bg-gray-400'
             }`}></div>
-          <span className={`text-sm font-medium transition-colors duration-200 ${visibleLines.success ? 'text-green-700' : 'text-gray-500'
+          <span className={`text-sm font-bold transition-colors duration-200 ${visibleLines.success ? 'text-green-700' : 'text-gray-500'
             }`}>เข้าถึงสำเร็จ</span>
         </div>
 
         <div
-          className={`flex items-center group cursor-pointer transition-all duration-200 px-3 py-2 rounded-lg ${visibleLines.denied ? 'bg-red-50 border-red-200' : 'bg-gray-100 border-gray-200'
-            } border`}
+          className={`flex items-center group cursor-pointer transition-all duration-200 px-4 py-3 rounded-lg ${visibleLines.denied ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-gray-100 border-gray-200'
+            } border-2`}
           onClick={() => toggleLine('denied')}
         >
-          <div className={`w-4 h-1 mr-3 transition-all duration-200 ${visibleLines.denied ? 'bg-red-500 scale-110' : 'bg-gray-400'
-            }`} style={{ borderStyle: 'dashed', borderWidth: '1px 0' }}></div>
-          <span className={`text-sm font-medium transition-colors duration-200 ${visibleLines.denied ? 'text-red-700' : 'text-gray-500'
+          <div className={`w-4 h-4 rounded-full mr-3 transition-all duration-200 ${visibleLines.denied ? 'bg-red-500 scale-110' : 'bg-gray-400'
+            }`}></div>
+          <span className={`text-sm font-bold transition-colors duration-200 ${visibleLines.denied ? 'text-red-700' : 'text-gray-500'
             }`}>ถูกปฏิเสธ</span>
         </div>
+      </div>
+
+      {/* Quick Stats Summary */}
+      <div className="mt-4 text-center">
+        <p className="text-sm text-gray-600">
+          รวมทั้งหมด: <span className="font-bold text-gray-800">{totalCount.toLocaleString('th-TH')}</span> ครั้ง
+          | ช่วงเวลาที่ใช้งานมากที่สุด: <span className="font-bold text-blue-600">
+            {chartData.reduce((max, item) =>
+              (parseInt(item.count) || 0) > (parseInt(max.count) || 0) ? item : max,
+              chartData[0] || {}
+            )?.hour || 'N/A'} น.
+          </span>
+        </p>
       </div>
     </div>
   );

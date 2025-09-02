@@ -2,9 +2,14 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const LocationDistributionChart = ({ data = [], loading = false }) => {
-  const [selectedLocation, setSelectedLocation] = useState('all');
+const LocationDistributionChart = ({ data = [], loading = false, initialLocation = 'all' }) => {
+  const [selectedLocation, setSelectedLocation] = useState(initialLocation || 'all');
   const [hoveredLocation, setHoveredLocation] = useState(null);
+  React.useEffect(() => {
+    if (initialLocation && initialLocation !== selectedLocation) {
+      setSelectedLocation(initialLocation);
+    }
+  }, [initialLocation]);
 
   // เตรียมข้อมูลสำหรับกราฟและ dropdown - แสดงทั้งหมด
   const processedData = useMemo(() => {
@@ -88,7 +93,7 @@ const LocationDistributionChart = ({ data = [], loading = false }) => {
               </svg>
             </div>
             <p className="text-lg font-medium text-gray-600">ไม่มีข้อมูลสถานที่</p>
-            <p className="text-sm text-gray-400 mt-1">ลองเปลี่ยนตัวกรองข้อมูล</p>
+            <p className="text-sm text-gray-400 mt-1">ลองเปลี่ยนตัวกรองข้อมูل</p>
           </div>
         </div>
       </div>
@@ -131,8 +136,6 @@ const LocationDistributionChart = ({ data = [], loading = false }) => {
             ))}
           </select>
         </div>
-
-
       </div>
 
       {/* Chart Section - เพิ่มความสูงเพื่อรองรับ label ยาว */}
@@ -145,8 +148,6 @@ const LocationDistributionChart = ({ data = [], loading = false }) => {
             onMouseLeave={() => setHoveredLocation(null)}
             barCategoryGap="10%"
           >
-
-
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="#cbd5e1"
@@ -177,42 +178,33 @@ const LocationDistributionChart = ({ data = [], loading = false }) => {
             <Tooltip
               formatter={(value, name) => [
                 `${value.toLocaleString('th-TH')} ครั้ง`,
-                name === 'count' ? 'การเข้าถึงทั้งหมด' :
-                  name === 'success' ? 'เข้าถึงสำเร็จ' :
-                    name === 'denied' ? 'ถูกปฏิเสธ' : name
+                name === 'success' ? 'เข้าถึงสำเร็จ' :
+                  name === 'denied' ? 'ถูกปฏิเสธ' : name
               ]}
               labelFormatter={(label, payload) => {
                 const item = payload?.[0]?.payload;
                 const successRate = item?.count > 0 ? ((item.success / item.count) * 100).toFixed(1) : 0;
-                return `📍 ${item?.locationDisplay || label} (อัตราสำเร็จ: ${successRate}%)`;
+                const totalAccess = (item?.success || 0) + (item?.denied || 0);
+                return `📍 ${item?.locationDisplay || label} (รวม: ${totalAccess.toLocaleString('th-TH')} ครั้ง | อัตราสำเร็จ: ${successRate}%)`;
               }}
               contentStyle={{
                 backgroundColor: '#ffffff',
                 border: '2px solid #e5e7eb',
                 borderRadius: '12px',
                 boxShadow: '0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                maxWidth: '300px',
+                maxWidth: '350px',
                 fontSize: '14px'
               }}
               cursor={{ fill: 'rgba(59, 130, 246, 0.15)', stroke: '#3B82F6', strokeWidth: 2 }}
             />
 
-            <Bar
-              dataKey="count"
-              fill="#1E40AF"
-              name="count"
-              radius={[4, 4, 0, 0]}
-              stroke="#1E40AF"
-              strokeWidth={0}
-            />
-
             {chartData.some(item => item.success > 0) && (
               <Bar
                 dataKey="success"
-                fill="#047857"
+                fill="#10B981"
                 name="success"
                 radius={[4, 4, 0, 0]}
-                stroke="#047857"
+                stroke="#10B981"
                 strokeWidth={0}
               />
             )}
@@ -220,10 +212,10 @@ const LocationDistributionChart = ({ data = [], loading = false }) => {
             {chartData.some(item => item.denied > 0) && (
               <Bar
                 dataKey="denied"
-                fill="#DC2626"
+                fill="#EF4444"
                 name="denied"
                 radius={[4, 4, 0, 0]}
-                stroke="#DC2626"
+                stroke="#EF4444"
                 strokeWidth={0}
               />
             )}
@@ -234,16 +226,12 @@ const LocationDistributionChart = ({ data = [], loading = false }) => {
       {/* Enhanced Legend */}
       <div className="flex justify-center mt-4 space-x-6">
         <div className="flex items-center group cursor-pointer">
-          <div className="w-4 h-4 bg-blue-700 rounded mr-3 group-hover:scale-110 transition-transform"></div>
-          <span className="text-sm font-medium text-gray-700 group-hover:text-blue-700">การเข้าถึงทั้งหมด</span>
+          <div className="w-4 h-4 bg-emerald-500 rounded mr-3 group-hover:scale-110 transition-transform"></div>
+          <span className="text-sm font-medium text-gray-700 group-hover:text-emerald-600">เข้าถึงสำเร็จ</span>
         </div>
         <div className="flex items-center group cursor-pointer">
-          <div className="w-4 h-4 bg-green-700 rounded mr-3 group-hover:scale-110 transition-transform"></div>
-          <span className="text-sm font-medium text-gray-700 group-hover:text-green-700">เข้าถึงสำเร็จ</span>
-        </div>
-        <div className="flex items-center group cursor-pointer">
-          <div className="w-4 h-4 bg-red-600 rounded mr-3 group-hover:scale-110 transition-transform"></div>
-          <span className="text-sm font-medium text-gray-700 group-hover:text-red-700">ถูกปฏิเสธ</span>
+          <div className="w-4 h-4 bg-red-500 rounded mr-3 group-hover:scale-110 transition-transform"></div>
+          <span className="text-sm font-medium text-gray-700 group-hover:text-red-600">ถูกปฏิเสธ</span>
         </div>
       </div>
 

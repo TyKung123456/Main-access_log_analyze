@@ -1,0 +1,4 @@
+"Date Time","Location","Direction","Allow","Reason","Card Name","User Type","Door","Device","Permission","Channel","Transaction ID"
+"2024-09-01 08:15:00","อาคาร A ชั้น 3","IN",true,,"สมชาย ใจดี","EMPLOYEE","A3-01","Reader-01","EMP_A3","CARD","TX-000001"
+"2024-09-01 08:16:10","อาคาร A ชั้น 3","OUT",true,,"สมชาย ใจดี","EMPLOYEE","A3-01","Reader-01","EMP_A3","CARD","TX-000002"
+"2024-09-01 22:45:05","อาคาร B ชั้น 1","IN",false,"INVALID PIN","Visitor 01","VISITOR","B1-02","Reader-07","VIS_TEMP","PIN","TX-000003"

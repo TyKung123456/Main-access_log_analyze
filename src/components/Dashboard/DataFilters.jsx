@@ -1,686 +1,670 @@
-// src/components/Dashboard/DataFilters.jsx - ปรับปรุงแก้ไขปัญหา
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import apiService from '../../services/apiService';
+import {
+  Clock,
+  MapPin,
+  Lock,
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle,
+  FileText,
+  RefreshCw,
+  Filter,
+  X,
+  ChevronRight,
+  Search,
+  Trash2
+} from 'lucide-react';
+import apiService from '../../services/apiService'; // Import apiService
 
-const DataFilters = ({ filters, onFilterChange, onClearFilters, loading = false }) => {
-  const [locations, setLocations] = useState([]);
-  const [directions, setDirections] = useState([]);
-  const [userTypes, setUserTypes] = useState([]);
-  const [loadingOptions, setLoadingOptions] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(filters.search || '');
+const LogViewerDashboard = () => {
+  // State management
+  const [allLogs, setAllLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [availableLocations, setAvailableLocations] = useState([]);
+  const [availableDoors, setAvailableDoors] = useState([]);
+  const [availableSeverities, setAvailableSeverities] = useState([]);
 
-  // Load filter options from API
-  useEffect(() => {
-    const loadFilterOptions = async () => {
-      setLoadingOptions(true);
-      try {
-        const [locationsRes, directionsRes, userTypesRes] = await Promise.all([
-          apiService.getLocations().catch(() => ({ locations: [] })),
-          apiService.getDirections().catch(() => ({ directions: [] })),
-          apiService.getUserTypes().catch(() => ({ userTypes: [] }))
-        ]);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [logsPerPage] = useState(20);
+  const [totalLogsCount, setTotalLogsCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-        setLocations(locationsRes.locations || []);
-        setDirections(directionsRes.directions || []);
-        setUserTypes(userTypesRes.userTypes || []);
-      } catch (error) {
-        console.warn('Failed to load filter options:', error);
-        // Set default options
-        setDirections([
-          { value: 'IN', label: 'เข้า (IN)', count: 0 },
-          { value: 'OUT', label: 'ออก (OUT)', count: 0 }
-        ]);
-        setUserTypes([
-          { value: 'EMPLOYEE', label: 'พนักงาน', count: 0 },
-          { value: 'VISITOR', label: 'ผู้มาเยือน', count: 0 },
-          { value: 'AFFILIATE', label: 'บุคคลที่เกี่ยวข้อง', count: 0 }
-        ]);
-      } finally {
-        setLoadingOptions(false);
-      }
+  // Filter states
+  const [filters, setFilters] = useState({
+    locations: [],
+    doors: [],
+    severities: []
+  });
+
+  // Fallback data for when API fails
+  const fallbackData = {
+    severityLevels: ['high', 'medium', 'low'],
+    locations: ['Building A', 'Building B', 'Main Entrance', 'Parking Lot'],
+    doors: ['Main Door', 'Emergency Exit', 'Side Door', 'Back Door']
+  };
+
+  // Get available filter options from actual data
+  const filterOptions = useMemo(() => {
+    let doorsForSelectedLocations = [];
+    if (filters.locations.length > 0) {
+      // Get unique doors from all currently loaded logs that match the selected locations
+      doorsForSelectedLocations = [...new Set(
+        allLogs
+          .filter(log => filters.locations.includes(log.location))
+          .map(log => log.door)
+          .filter(door => door) // Filter out any undefined/null doors
+      )].sort();
+    } else {
+      // If no locations are selected, show all available doors fetched from the API
+      doorsForSelectedLocations = availableDoors;
+    }
+
+    return {
+      locations: availableLocations,
+      doors: doorsForSelectedLocations,
+      severities: availableSeverities
     };
+  }, [availableLocations, availableDoors, availableSeverities, filters.locations, allLogs]);
 
-    loadFilterOptions();
+  // Load logs
+  const loadLogs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = {
+        page: currentPage,
+        limit: logsPerPage,
+        locations: filters.locations,
+        doors: filters.doors,
+        severities: filters.severities,
+      };
+
+      console.log('🔄 Loading logs with params:', params);
+      const response = await apiService.getLogs(params);
+      console.log('✅ Logs loaded successfully:', response);
+
+      setAllLogs(response.logs || []);
+      setTotalLogsCount(response.total || 0);
+      setTotalPages(Math.ceil((response.total || 0) / logsPerPage));
+
+    } catch (error) {
+      console.error('❌ Error loading logs:', error);
+      // Set empty data on error
+      setAllLogs([]);
+      setTotalLogsCount(0);
+      setTotalPages(1);
+
+      // Show user-friendly error message
+      alert(`ไม่สามารถโหลดข้อมูล Log ได้: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, logsPerPage, filters]);
+
+  // Load filter options with fallback
+  const loadFilterOptions = useCallback(async () => {
+    console.log('🔄 Loading filter options...');
+
+    try {
+      const [locationsRes, doorsRes, severitiesRes] = await Promise.allSettled([
+        apiService.getLocations().catch(() => ({ locations: fallbackData.locations.map(item => ({ value: item })) })),
+        apiService.getDoors().catch(() => ({ doors: fallbackData.doors.map(item => ({ value: item })) })),
+        apiService.getSeverityLevels().catch(() => ({ severityLevels: fallbackData.severityLevels.map(item => ({ value: item })) }))
+      ]);
+
+      // Handle locations
+      if (locationsRes.status === 'fulfilled') {
+        const locations = locationsRes.value.locations?.map(item => item.value) || fallbackData.locations;
+        setAvailableLocations(locations.sort());
+        console.log('✅ Locations loaded:', locations);
+      } else {
+        console.log('⚠️ Using fallback locations');
+        setAvailableLocations(fallbackData.locations);
+      }
+
+      // Handle doors
+      if (doorsRes.status === 'fulfilled') {
+        const doors = doorsRes.value.doors?.map(item => item.value) || fallbackData.doors;
+        setAvailableDoors(doors.sort());
+        console.log('✅ Doors loaded:', doors);
+      } else {
+        console.log('⚠️ Using fallback doors');
+        setAvailableDoors(fallbackData.doors);
+      }
+
+      // Handle severities
+      if (severitiesRes.status === 'fulfilled') {
+        const severities = severitiesRes.value.severityLevels?.map(item => item.value) || fallbackData.severityLevels;
+        setAvailableSeverities(severities.sort());
+        console.log('✅ Severities loaded:', severities);
+      } else {
+        console.log('⚠️ Using fallback severities');
+        setAvailableSeverities(fallbackData.severityLevels);
+      }
+
+    } catch (error) {
+      console.error('❌ Error loading filter options, using fallback data:', error);
+      // Use all fallback data
+      setAvailableLocations(fallbackData.locations);
+      setAvailableDoors(fallbackData.doors);
+      setAvailableSeverities(fallbackData.severityLevels);
+    }
   }, []);
 
-  // Synchronize internal searchTerm with external filters.search
+  // Handle filter changes
+  const handleFilterChange = (filterType, value) => {
+    setFilters(prev => {
+      const newFilters = { ...prev };
+
+      if (filterType === 'locations') {
+        // Toggle location selection
+        if (prev.locations.includes(value)) {
+          newFilters.locations = prev.locations.filter(item => item !== value);
+        } else {
+          newFilters.locations = [...prev.locations, value];
+        }
+
+        // Clear door selection when location changes
+        newFilters.doors = [];
+      } else if (filterType === 'doors') {
+        // Toggle door selection
+        if (prev.doors.includes(value)) {
+          newFilters.doors = prev.doors.filter(item => item !== value);
+        } else {
+          newFilters.doors = [...prev.doors, value];
+        }
+      } else {
+        // Handle severity filters
+        if (prev[filterType].includes(value)) {
+          newFilters[filterType] = prev[filterType].filter(item => item !== value);
+        } else {
+          newFilters[filterType] = [...prev[filterType], value];
+        }
+      }
+
+      return newFilters;
+    });
+    setCurrentPage(1); // Reset to first page when filters change
+  };
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setFilters({
+      locations: [],
+      doors: [],
+      severities: []
+    });
+  };
+
+  // Get time ago string
+  const getTimeAgo = (dateString) => {
+    if (!dateString) return '';
+
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'เมื่อสักครู่';
+    if (diffMins < 60) return `${diffMins} นาทีที่แล้ว`;
+    if (diffHours < 24) return `${diffHours} ชั่วโมงที่แล้ว`;
+    if (diffDays < 7) return `${diffDays} วันที่แล้ว`;
+
+    return date.toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Get severity config
+  const getSeverityConfig = (severity) => {
+    const configs = {
+      high: {
+        color: 'text-red-600 bg-red-100',
+        borderColor: 'border-red-200',
+        bgColor: 'bg-red-50',
+        icon: AlertTriangle,
+        label: 'สูง (High)'
+      },
+      medium: {
+        color: 'text-yellow-600 bg-yellow-100',
+        borderColor: 'border-yellow-200',
+        bgColor: 'bg-yellow-50',
+        icon: AlertCircle,
+        label: 'กลาง (Medium)'
+      },
+      low: {
+        color: 'text-green-600 bg-green-100',
+        borderColor: 'border-green-200',
+        bgColor: 'bg-green-50',
+        icon: CheckCircle,
+        label: 'ต่ำ (Low)'
+      }
+    };
+    return configs[severity] || configs.low;
+  };
+
+  // Calculate stats
+  const stats = {
+    total: totalLogsCount,
+    high: allLogs.filter(log => log.severity === 'high').length,
+    medium: allLogs.filter(log => log.severity === 'medium').length,
+    low: allLogs.filter(log => log.severity === 'low').length
+  };
+
+  // Effects
   useEffect(() => {
-    setSearchTerm(filters.search || '');
-  }, [filters.search]);
+    loadLogs();
+  }, [loadLogs]);
 
-  // Debounced search effect
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchTerm !== (filters.search || '')) {
-        onFilterChange('search', searchTerm || null);
-      }
-    }, 300); // ลดเวลา debounce จาก 500 เป็น 300ms
+    loadFilterOptions();
+  }, [loadFilterOptions]);
 
-    return () => clearTimeout(timer);
-  }, [searchTerm, onFilterChange, filters.search]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-  // Handle date range change with validation
-  const handleDateRangeChange = (type, value) => {
-    const currentRange = filters.dateRange || {};
-    const newRange = { ...currentRange, [type]: value };
+  useEffect(() => {
+    const autoRefresh = setInterval(loadLogs, 30000);
+    return () => clearInterval(autoRefresh);
+  }, [loadLogs]);
 
-    // Validate date range
-    if (type === 'start' && newRange.end && value > newRange.end) {
-      alert('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด');
-      return;
-    }
-    if (type === 'end' && newRange.start && value < newRange.start) {
-      alert('วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น');
-      return;
-    }
+  // Render log item
+  const LogItem = ({ log }) => {
+    const severityConfig = getSeverityConfig(log.severity);
+    const SeverityIcon = severityConfig.icon;
 
-    onFilterChange('dateRange', newRange);
+    return (
+      <div
+        className={`border rounded-lg p-4 cursor-pointer transition-all duration-200 hover:bg-gray-50 hover:scale-[1.01] ${severityConfig.borderColor} ${severityConfig.bgColor}`}
+        onClick={() => {
+          setSelectedLog(log);
+          setShowModal(true);
+        }}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center space-x-3 mb-2">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${severityConfig.color}`}>
+                <SeverityIcon className="w-4 h-4" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-medium text-sm">{log.source}</span>
+                  <span className="text-xs px-2 py-1 rounded-full bg-gray-200 text-gray-700">
+                    {log.type}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4 text-xs text-gray-600 mt-1">
+                  <span className="flex items-center">
+                    <MapPin className="w-3 h-3 mr-1" />
+                    {log.location}
+                  </span>
+                  <span className="flex items-center">
+                    <Lock className="w-3 h-3 mr-1" />
+                    {log.door}
+                  </span>
+                  <span className="flex items-center">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {getTimeAgo(log.timestamp)}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="text-sm font-medium text-gray-900 mb-1">
+              {log.message}
+            </div>
+            <div className="text-sm text-gray-600 truncate">
+              {log.details}
+            </div>
+          </div>
+          <div className="flex-shrink-0 ml-4">
+            <ChevronRight className="w-5 h-5 text-gray-400" />
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  // Handle multi-select change
-  const handleMultiSelectChange = (filterKey, option, checked) => {
-    const currentValues = filters[filterKey] || [];
-    const newValues = checked
-      ? [...currentValues, option.value]
-      : currentValues.filter(val => val !== option.value);
+  // Render modal
+  const Modal = ({ log, isOpen, onClose }) => {
+    if (!isOpen || !log) return null;
 
-    onFilterChange(filterKey, newValues.length > 0 ? newValues : null);
+    const severityConfig = getSeverityConfig(log.severity);
+    const SeverityIcon = severityConfig.icon;
+
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900">รายละเอียด Log</h3>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
+            <div className="flex items-center space-x-3">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${severityConfig.color}`}>
+                <SeverityIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-lg font-semibold text-gray-900">{log.message}</h4>
+                <p className="text-sm text-gray-600">ID: {log.source}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h5 className="font-medium text-gray-900 mb-2">ข้อมูลพื้นฐาน</h5>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">เวลา:</span>
+                    <span className="font-medium">{new Date(log.timestamp).toLocaleString('th-TH')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">สถานที่:</span>
+                    <span className="font-medium">{log.location}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ประตู:</span>
+                    <span className="font-medium">{log.door}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ประเภท:</span>
+                    <span className="font-medium">{log.type}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h5 className="font-medium text-gray-900 mb-2">ระดับความรุนแรง</h5>
+                <div className="flex items-center space-x-2">
+                  <span className={`w-3 h-3 rounded-full ${log.severity === 'high' ? 'bg-red-500' : log.severity === 'medium' ? 'bg-yellow-500' : 'bg-green-500'}`}></span>
+                  <span className="font-medium">{severityConfig.label}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h5 className="font-medium text-gray-900 mb-2">รายละเอียดเพิ่มเติม</h5>
+              <div className="bg-white p-3 rounded border font-mono text-sm text-gray-800 whitespace-pre-wrap">
+                {log.details}
+              </div>
+            </div>
+
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h5 className="font-medium text-blue-900 mb-2">ข้อมูลทางเทคนิค</h5>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-blue-700">Source:</span>
+                  <span className="font-mono text-blue-900">{log.source}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-blue-700">Log ID:</span>
+                  <span className="font-mono text-blue-900">{log.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-blue-700">Timestamp:</span>
+                  <span className="font-mono text-blue-900">{log.timestamp}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
-
-  // Handle sort change
-  const handleSortChange = (field, newSortBy, newSortOrder) => {
-    onFilterChange('sortBy', newSortBy);
-    onFilterChange('sortOrder', newSortOrder);
-  };
-
-  // Apply all filters - แก้ไขฟังก์ชันนี้
-  const handleApplyFilters = useCallback((e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    console.log('🔍 Applying filters button clicked');
-    console.log('Current searchTerm:', searchTerm);
-    console.log('Current filters:', filters);
-
-    // อัพเดต search term ก่อน
-    if (searchTerm !== (filters.search || '')) {
-      onFilterChange('search', searchTerm || null);
-    }
-
-    // บังคับให้ refresh ข้อมูล
-    setTimeout(() => {
-      if (typeof onFilterChange === 'function') {
-        onFilterChange('_forceRefresh', Date.now());
-      }
-    }, 100);
-
-    return false;
-  }, [filters, searchTerm, onFilterChange]);
-
-  // Get active filter count (exclude internal fields)
-  const activeFilterCount = useMemo(() => {
-    const count = Object.keys(filters).filter(key =>
-      !key.startsWith('_') &&
-      filters[key] !== null &&
-      filters[key] !== undefined &&
-      filters[key] !== '' &&
-      !(Array.isArray(filters[key]) && filters[key].length === 0)
-    ).length;
-    console.log('📊 Active filter count:', count, filters);
-    return count;
-  }, [filters]);
-
-  // Quick filter presets - เพิ่มฟีเจอร์ใหม่
-  const quickFilters = [
-    {
-      label: 'วันนี้',
-      action: () => {
-        const today = new Date().toISOString().split('T')[0];
-        onFilterChange('dateRange', { start: today, end: today });
-      }
-    },
-    {
-      label: '7 วันที่แล้ว',
-      action: () => {
-        const today = new Date();
-        const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-        onFilterChange('dateRange', {
-          start: weekAgo.toISOString().split('T')[0],
-          end: today.toISOString().split('T')[0]
-        });
-      }
-    },
-    {
-      label: 'เดือนนี้',
-      action: () => {
-        const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        onFilterChange('dateRange', {
-          start: firstDay.toISOString().split('T')[0],
-          end: today.toISOString().split('T')[0]
-        });
-      }
-    },
-    {
-      label: 'การเข้าถึงที่ถูกปฏิเสธ',
-      action: () => {
-        onFilterChange('allow', false);
-      }
-    }
-  ];
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">🔍 ตัวกรองข้อมูล</h3>
-        <div className="flex items-center gap-2">
-          {activeFilterCount > 0 && (
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium">
-              {activeFilterCount} ตัวกรอง
-            </span>
-          )}
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            {showAdvanced ? 'ซ่อนตัวกรองขั้นสูง' : 'แสดงตัวกรองขั้นสูง'}
-          </button>
-        </div>
-      </div>
-
-      {/* Quick Filters - เพิ่มฟีเจอร์ใหม่ */}
-      <div className="flex flex-wrap gap-2">
-        <span className="text-sm font-medium text-gray-700 mr-2">ตัวกรองด่วน:</span>
-        {quickFilters.map((filter, index) => (
-          <button
-            key={index}
-            onClick={filter.action}
-            disabled={loading}
-            className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors disabled:opacity-50"
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Basic Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Search */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            ค้นหา
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => {
-                console.log('🔤 Search input changed:', e.target.value);
-                setSearchTerm(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                console.log('⌨️ Key pressed:', e.key);
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleApplyFilters(e);
-                }
-              }}
-              onFocus={() => console.log('🎯 Search input focused')}
-              onBlur={() => console.log('😴 Search input blurred')}
-              placeholder="ชื่อ, หมายเลขบัตร, สถานที่..."
-              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-              disabled={loading}
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Date Range Start */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            วันที่เริ่มต้น
-          </label>
-          <input
-            type="date"
-            value={filters.dateRange?.start || ''}
-            onChange={(e) => handleDateRangeChange('start', e.target.value)}
-            max={filters.dateRange?.end || new Date().toISOString().split('T')[0]}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-            disabled={loading}
-          />
-        </div>
-
-        {/* Date Range End */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            วันที่สิ้นสุด
-          </label>
-          <input
-            type="date"
-            value={filters.dateRange?.end || ''}
-            onChange={(e) => handleDateRangeChange('end', e.target.value)}
-            min={filters.dateRange?.start || ''}
-            max={new Date().toISOString().split('T')[0]}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-            disabled={loading}
-          />
-        </div>
-
-        {/* Access Status */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            สถานะการเข้าถึง
-          </label>
-          <select
-            value={filters.allow === undefined ? '' : filters.allow.toString()}
-            onChange={(e) => {
-              const value = e.target.value;
-              onFilterChange('allow', value === '' ? null : value === 'true');
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-            disabled={loading}
-          >
-            <option value="">ทั้งหมด</option>
-            <option value="true">✅ อนุญาต</option>
-            <option value="false">❌ ปฏิเสธ</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Sort Options */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            เรียงตาม
-          </label>
-          <select
-            value={filters.sortBy || 'timestamp'}
-            onChange={(e) => handleSortChange('sortBy', e.target.value, filters.sortOrder || 'desc')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-            disabled={loading}
-          >
-            <option value="timestamp">⏰ เวลาเข้าถึง</option>
-            <option value="name">👤 ชื่อผู้ใช้</option>
-            <option value="location">📍 สถานที่</option>
-            <option value="cardNumber">🔢 หมายเลขบัตร</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            ลำดับการเรียง
-          </label>
-          <select
-            value={filters.sortOrder || 'desc'}
-            onChange={(e) => handleSortChange('sortOrder', filters.sortBy || 'timestamp', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-            disabled={loading}
-          >
-            <option value="desc">⬇️ ล่าสุด - เก่าสุด</option>
-            <option value="asc">⬆️ เก่าสุด - ล่าสุด</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Advanced Filters */}
-      {showAdvanced && (
-        <div className="border-t pt-4 space-y-4">
-          <h4 className="font-medium text-gray-900">ตัวกรองขั้นสูง</h4>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Locations */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                📍 สถานที่ ({locations.length})
-              </label>
-              <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-md p-2 space-y-1 bg-gray-50">
-                {loadingOptions ? (
-                  <div className="text-center py-4 text-gray-500">
-                    <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                    กำลังโหลด...
-                  </div>
-                ) : locations.length > 0 ? (
-                  locations.map((location) => (
-                    <label key={location.value} className="flex items-center space-x-2 p-2 hover:bg-white rounded cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={(filters.location || []).includes(location.value)}
-                        onChange={(e) => handleMultiSelectChange('location', location, e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        disabled={loading}
-                      />
-                      <span className="text-sm flex-1 truncate" title={location.label}>
-                        {location.label}
-                      </span>
-                      {location.count !== undefined && (
-                        <span className="text-xs text-gray-500 bg-gray-200 px-1 rounded">
-                          {location.count.toLocaleString('th-TH')}
-                        </span>
-                      )}
-                    </label>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-gray-500">ไม่มีข้อมูลสถานที่</div>
-                )}
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-4">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-white" />
+                </div>
+                <h1 className="text-xl font-semibold text-gray-900">Log Viewer</h1>
+              </div>
+              <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-500">
+                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                <span>Live Mode</span>
               </div>
             </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-600">
+                {currentTime.toLocaleString('th-TH')}
+              </div>
+              <button
+                onClick={loadLogs}
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>รีเฟรช</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
 
-            {/* Directions */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                🔄 ทิศทาง
-              </label>
-              <div className="space-y-2">
-                {directions.map((direction) => (
-                  <label key={direction.value} className="flex items-center space-x-2 p-3 hover:bg-gray-50 rounded border border-gray-200 cursor-pointer transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={(filters.direction || []).includes(direction.value)}
-                      onChange={(e) => handleMultiSelectChange('direction', direction, e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      disabled={loading}
-                    />
-                    <span className="text-sm flex-1 font-medium">
-                      {direction.label}
-                    </span>
-                    {direction.count !== undefined && (
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                        {direction.count.toLocaleString('th-TH')}
-                      </span>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Filters Sidebar */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <Filter className="w-5 h-5 mr-2" />
+                ตัวกรองข้อมูล
+              </h2>
+
+              {/* Location Filter */}
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                  <MapPin className="w-4 h-4 mr-2" />
+                  สถานที่ (Location)
+                </h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {filterOptions.locations.map(location => (
+                    <label key={location} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={filters.locations.includes(location)}
+                        onChange={() => handleFilterChange('locations', location)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="ml-2 text-sm">{location}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Door Filter - Only show if location is selected */}
+              {filters.locations.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                    <Lock className="w-4 h-4 mr-2" />
+                    ประตู (Door)
+                  </h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {filterOptions.doors.length > 0 ? (
+                      filterOptions.doors.map(door => (
+                        <label key={door} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={filters.doors.includes(door)}
+                            onChange={() => handleFilterChange('doors', door)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm">{door}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500">ไม่มีประตูในพื้นที่ที่เลือก</p>
                     )}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* User Types */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                👥 ประเภทผู้ใช้
-              </label>
-              <div className="space-y-2">
-                {loadingOptions ? (
-                  <div className="text-center py-4 text-gray-500">
-                    <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                    กำลังโหลด...
                   </div>
-                ) : userTypes.length > 0 ? (
-                  userTypes.map((userType) => (
-                    <label key={userType.value} className="flex items-center space-x-2 p-3 hover:bg-gray-50 rounded border border-gray-200 cursor-pointer transition-colors">
+                </div>
+              )}
+
+              {/* Severity Filter */}
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  ระดับความรุนแรง
+                </h3>
+                <div className="space-y-2">
+                  {[
+                    { value: 'high', label: 'High (สูง)', color: 'bg-red-500' },
+                    { value: 'medium', label: 'Medium (กลาง)', color: 'bg-yellow-500' },
+                    { value: 'low', label: 'Low (ต่ำ)', color: 'bg-green-500' }
+                  ].map(severity => (
+                    <label key={severity.value} className="flex items-center">
                       <input
                         type="checkbox"
-                        checked={(filters.userType || []).includes(userType.value)}
-                        onChange={(e) => handleMultiSelectChange('userType', userType, e.target.checked)}
+                        checked={filters.severities.includes(severity.value)}
+                        onChange={() => handleFilterChange('severities', severity.value)}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        disabled={loading}
                       />
-                      <span className="text-sm flex-1 font-medium">
-                        {userType.label}
+                      <span className="ml-2 text-sm flex items-center">
+                        <span className={`w-3 h-3 ${severity.color} rounded-full mr-2`}></span>
+                        {severity.label}
                       </span>
-                      {userType.count !== undefined && (
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {userType.count.toLocaleString('th-TH')}
-                        </span>
-                      )}
                     </label>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-gray-500">ไม่มีข้อมูลประเภทผู้ใช้</div>
-                )}
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Time Range Filters - เพิ่มฟีเจอร์ใหม่ */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                เวลาเริ่มต้น
-              </label>
-              <input
-                type="time"
-                value={filters.timeRange?.start || ''}
-                onChange={(e) => {
-                  const currentRange = filters.timeRange || {};
-                  onFilterChange('timeRange', { ...currentRange, start: e.target.value });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                เวลาสิ้นสุด
-              </label>
-              <input
-                type="time"
-                value={filters.timeRange?.end || ''}
-                onChange={(e) => {
-                  const currentRange = filters.timeRange || {};
-                  onFilterChange('timeRange', { ...currentRange, end: e.target.value });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
-                disabled={loading}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Debug Panel - ลบออกเมื่อใช้งานจริง */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md text-xs">
-          <details>
-            <summary className="cursor-pointer font-medium text-yellow-800">🐛 Debug Info (คลิกเพื่อดู)</summary>
-            <div className="mt-2 space-y-1 text-yellow-700">
-              <div><strong>Search Term:</strong> "{searchTerm}"</div>
-              <div><strong>Filters Search:</strong> "{filters.search || 'null'}"</div>
-              <div><strong>Active Filters:</strong> {activeFilterCount}</div>
-              <div><strong>Loading:</strong> {loading ? 'Yes' : 'No'}</div>
-              <div><strong>All Filters:</strong> {JSON.stringify(filters, null, 2)}</div>
+              {/* Clear Filters */}
               <button
-                onClick={() => {
-                  console.log('🧪 Manual test button clicked');
-                  handleApplyFilters();
-                }}
-                className="mt-2 px-2 py-1 bg-yellow-200 hover:bg-yellow-300 rounded text-yellow-800"
+                onClick={clearAllFilters}
+                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2"
               >
-                Test Apply Filters
+                <Trash2 className="w-4 h-4" />
+                <span>ล้างตัวกรอง</span>
               </button>
             </div>
-          </details>
-        </div>
-      )}
+          </div>
 
-      {/* Filter Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t">
-        <div className="text-sm text-gray-600">
-          {activeFilterCount > 0 ? (
-            <span className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-              ใช้ตัวกรอง {activeFilterCount} รายการ
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-gray-400 rounded-full"></span>
-              ไม่มีตัวกรองที่ใช้งาน
-            </span>
-          )}
-        </div>
+          {/* Main Content */}
+          <div className="lg:col-span-3">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              {[
+                { label: 'รวม', value: stats.total, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-100' },
+                { label: 'High', value: stats.high, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100' },
+                { label: 'Medium', value: stats.medium, icon: AlertCircle, color: 'text-yellow-600', bg: 'bg-yellow-100' },
+                { label: 'Low', value: stats.low, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100' }
+              ].map((stat, index) => {
+                const IconComponent = stat.icon;
+                return (
+                  <div key={index} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div className="flex items-center">
+                      <div className={`w-10 h-10 ${stat.bg} rounded-lg flex items-center justify-center`}>
+                        <IconComponent className={`w-5 h-5 ${stat.color}`} />
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm text-gray-600">{stat.label}</p>
+                        <p className={`text-lg font-semibold ${stat.color}`}>{stat.value}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-        <div className="flex gap-3">
-          {activeFilterCount > 0 && (
-            <button
-              onClick={onClearFilters}
-              disabled={loading}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              ล้างตัวกรอง
-            </button>
-          )}
+            {/* Log List */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-lg font-semibold text-gray-900">รายการ Log</h2>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-600">
+                      แสดง {allLogs.length} จาก {totalLogsCount} รายการ
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-          <button
-            type="button"
-            onClick={handleApplyFilters}
-            disabled={loading}
-            style={{
-              pointerEvents: loading ? 'none' : 'auto',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
-            onMouseDown={(e) => {
-              console.log('🖱️ Search button mouse down');
-              e.preventDefault();
-            }}
-            onMouseUp={(e) => {
-              console.log('🖱️ Search button mouse up');
-              e.preventDefault();
-            }}
-            onTouchStart={(e) => {
-              console.log('📱 Search button touch start');
-            }}
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                กำลังค้นหา...
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                ค้นหา
-              </>
-            )}
-          </button>
+              <div className="p-6">
+                {loading ? (
+                  <div className="text-center py-8">
+                    <RefreshCw className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4" />
+                    <p className="text-gray-600">กำลังโหลด...</p>
+                  </div>
+                ) : allLogs.length > 0 ? (
+                  <div className="space-y-4">
+                    {allLogs.map(log => (
+                      <LogItem key={log.id} log={log} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Search className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <h3 className="text-sm font-medium text-gray-900">ไม่มีข้อมูล Log</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {filters.locations.length > 0 || filters.doors.length > 0 || filters.severities.length > 0
+                        ? 'ไม่พบ Log ที่ตรงกับเงื่อนไขการค้นหา'
+                        : 'ยังไม่มีข้อมูล Log ในระบบ หรือเกิดปัญหาในการเชื่อมต่อ API'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="p-6 border-t border-gray-200 flex justify-center items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1 || loading}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  >
+                    ก่อนหน้า
+                  </button>
+                  <span className="text-sm text-gray-700">
+                    หน้า {currentPage} จาก {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages || loading}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  >
+                    ถัดไป
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Active Filters Summary */}
-      {activeFilterCount > 0 && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
-          <div className="text-sm text-blue-900">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              <strong>ตัวกรองที่ใช้งาน:</strong>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(filters)
-                .filter(([key, value]) => key !== '_refresh' && value !== null && value !== undefined && value !== '')
-                .map(([key, value]) => {
-                  let displayText = '';
-                  let bgColor = 'bg-blue-100 text-blue-800';
-
-                  if (key === 'search' && value) {
-                    displayText = `ค้นหา: "${value}"`;
-                    bgColor = 'bg-green-100 text-green-800';
-                  } else if (key === 'dateRange' && value) {
-                    displayText = `📅 ${value.start || ''} ${value.end ? `- ${value.end}` : ''}`;
-                    bgColor = 'bg-purple-100 text-purple-800';
-                  } else if (key === 'timeRange' && value) {
-                    displayText = `🕒 ${value.start || ''} ${value.end ? `- ${value.end}` : ''}`;
-                    bgColor = 'bg-orange-100 text-orange-800';
-                  } else if (key === 'allow' && value !== undefined) {
-                    displayText = `${value ? '✅' : '❌'} ${value ? 'อนุญาত' : 'ปฏิเสธ'}`;
-                    bgColor = value ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                  } else if (key === 'sortBy' && value) {
-                    const sortLabels = {
-                      timestamp: '⏰ เวลาเข้าถึง',
-                      name: '👤 ชื่อ',
-                      location: '📍 สถานที่',
-                      cardNumber: '🔢 หมายเลขบัตร'
-                    };
-                    displayText = `เรียง: ${sortLabels[value] || value}`;
-                  } else if (key === 'sortOrder' && value) {
-                    displayText = `${value === 'desc' ? '⬇️' : '⬆️'} ${value === 'desc' ? 'ใหม่-เก่า' : 'เก่า-ใหม่'}`;
-                  } else if (Array.isArray(value) && value.length > 0) {
-                    const keyMap = {
-                      location: { label: '📍 สถานที่', color: 'bg-yellow-100 text-yellow-800' },
-                      direction: { label: '🔄 ทิศทาง', color: 'bg-indigo-100 text-indigo-800' },
-                      userType: { label: '👥 ประเภท', color: 'bg-pink-100 text-pink-800' }
-                    };
-                    const config = keyMap[key] || { label: key, color: bgColor };
-                    displayText = `${config.label}: ${value.join(', ')}`;
-                    bgColor = config.color;
-                  }
-
-                  return displayText ? (
-                    <span key={key} className={`inline-flex items-center px-3 py-1 ${bgColor} rounded-full text-xs font-medium`}>
-                      {displayText}
-                      <button
-                        onClick={() => onFilterChange(key, null)}
-                        className="ml-2 hover:text-current opacity-70 hover:opacity-100 transition-opacity"
-                        title={`ลบตัวกรอง ${displayText}`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ) : null;
-                })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Options - เพิ่มฟีเจอร์ใหม่ */}
-      {activeFilterCount > 0 && (
-        <div className="bg-gray-50 p-3 rounded-lg">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium text-gray-700">ส่งออกข้อมูล:</span>
-            <button
-              onClick={() => {
-                // สร้าง CSV export logic
-                console.log('Exporting to CSV with filters:', filters);
-                // เรียก API หรือฟังก์ชัน export ที่เหมาะสม
-              }}
-              disabled={loading}
-              className="px-3 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
-            >
-              📊 CSV
-            </button>
-            <button
-              onClick={() => {
-                // สร้าง Excel export logic
-                console.log('Exporting to Excel with filters:', filters);
-              }}
-              disabled={loading}
-              className="px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
-            >
-              📈 Excel
-            </button>
-            <button
-              onClick={() => {
-                // สร้าง PDF report logic
-                console.log('Generating PDF report with filters:', filters);
-              }}
-              disabled={loading}
-              className="px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
-            >
-              📄 PDF
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Modal */}
+      <Modal
+        log={selectedLog}
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+      />
     </div>
   );
 };
 
-export default DataFilters;
+export default LogViewerDashboard;

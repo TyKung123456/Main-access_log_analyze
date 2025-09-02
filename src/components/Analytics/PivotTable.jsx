@@ -996,12 +996,10 @@ const PivotTable = () => {
 
               {/* Chart Styling Panel */}
               {showChart && showStylePanel && (
-                <Card className="border-0 shadow-lg mb-6 bg-gradient-to-r from-pink-50 to-purple-50">
+                <Card className="border border-gray-200 shadow-sm mb-6 bg-white">
                   <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <div className="p-2 bg-pink-100 rounded-lg">
-                        🎨
-                      </div>
+                    <CardTitle className="flex items-center gap-2 text-lg text-gray-800">
+                      <div className="p-2 bg-blue-100 rounded-lg">🎨</div>
                       Chart Styling
                     </CardTitle>
                   </CardHeader>
@@ -1335,12 +1333,12 @@ const PivotTable = () => {
 
               {/* Results */}
               {data.length > 0 && rowField && colField && (
-                <Card className="border-0 shadow-lg bg-gradient-to-r from-white to-orange-50">
+                <Card className="border border-gray-200 shadow-sm bg-white">
                   <CardHeader className="pb-4">
                     <CardTitle className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-orange-100 rounded-lg">
-                          <BarChart3 size={20} className="text-orange-600" />
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <BarChart3 size={20} className="text-blue-600" />
                         </div>
                         <div>
                           <span className="text-xl font-bold text-gray-800">Analysis Results</span>
@@ -1365,7 +1363,7 @@ const PivotTable = () => {
                       <div className="overflow-x-auto">
                         <table className="min-w-full">
                           <thead>
-                            <tr className="bg-gradient-to-r from-gray-100 to-gray-200">
+                            <tr className="bg-gray-100">
                               {pivotData.headers.map((header, index) => (
                                 <th
                                   key={index}
@@ -1419,11 +1417,11 @@ const PivotTable = () => {
                                     {pivotData.headers.map((header, colIndex) => (
                                       <td
                                         key={colIndex}
-                                        className={`border-r border-gray-200 px-6 py-4 transition-all duration-200 ${colIndex === 0
-                                          ? 'font-semibold text-gray-800 bg-gradient-to-r from-gray-25 to-blue-25'
+                                  className={`border-r border-gray-200 px-6 py-4 transition-all duration-200 ${colIndex === 0
+                                          ? 'font-semibold text-gray-800 bg-blue-50'
                                           : 'text-right text-gray-700'
                                           } ${header === 'Total'
-                                            ? 'bg-gradient-to-r from-blue-25 to-indigo-25 font-semibold text-blue-800 border-l-2 border-blue-300'
+                                            ? 'bg-blue-50 font-semibold text-blue-800 border-l-2 border-blue-300'
                                             : ''
                                           } ${isTotal && colIndex > 0
                                             ? 'text-blue-800 font-bold text-lg'
@@ -1446,7 +1444,7 @@ const PivotTable = () => {
                     </div>
 
                     {pivotData.rows.length > 0 && (
-                      <div className="mt-6 p-4 bg-gradient-to-r from-gray-50 to-orange-50 rounded-xl border border-gray-200">
+                    <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-gray-200">
                         <div className="flex items-center justify-between flex-wrap gap-4">
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <div className="flex items-center gap-2">
