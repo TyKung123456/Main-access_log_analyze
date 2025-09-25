@@ -112,6 +112,11 @@ const PivotTable = () => {
   }, [data, availableFields, numericFields]);
 
   const pivotData = useMemo(() => {
+    const isEmptyish = (v) => {
+      if (v === undefined || v === null) return true;
+      const s = String(v).trim().toLowerCase();
+      return s === '' || ['ไม่ระบุ', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+    };
     if (!data || data.length === 0 || !rowField || !colField) {
       return { headers: [], rows: [], totals: {}, maxValue: 0 };
     }
@@ -143,8 +148,11 @@ const PivotTable = () => {
     let maxValue = 0;
 
     filteredData.forEach(item => {
-      const rowValue = String(item[rowField] ?? 'N/A');
-      const colValue = String(item[colField] ?? 'N/A');
+      const rowRaw = item[rowField];
+      const colRaw = item[colField];
+      if (isEmptyish(rowRaw) || isEmptyish(colRaw)) return; // skip empty row/col buckets
+      const rowValue = String(rowRaw);
+      const colValue = String(colRaw);
 
       rowHeaders.add(rowValue);
       colHeaders.add(colValue);
@@ -484,7 +492,7 @@ const PivotTable = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
 
         {/* Top Navigation Bar */}
         <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">

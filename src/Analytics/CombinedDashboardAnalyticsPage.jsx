@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import StatsCards from '../components/Dashboard/StatsCards';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import EnhancedStatsCards from '../components/Analytics/Cards/EnhancedStatsCards.jsx';
+import AccessHeatmap from '../components/Analytics/Charts/AccessHeatmap.jsx';
+import TopEventsBarChart from '../components/Analytics/Charts/TopEventsBarChart.jsx';
+import TimelineDenied7d from '../components/Analytics/Charts/TimelineDenied7d.jsx';
+import ReviewTable from '../components/Analytics/Tables/ReviewTable.jsx';
 import RecentAccessTable from '../components/Dashboard/RecentAccessTable';
+import KPIStatusCard from '../components/Analytics/Cards/KPIStatusCard';
 import {
   Shield,
   AlertTriangle,
@@ -9,32 +14,37 @@ import {
   Clock,
   LayoutDashboard,
   LineChart,
+  ChevronDown,
 } from 'lucide-react';
+import DeniedReasonsChart from '../components/Analytics/Charts/DeniedReasonsChart.jsx';
 import { computeSuspicionByUser, computeSuspicionAll } from '../utils/suspicionScore';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card.jsx';
 
 // Simple collapsible wrapper for overview blocks
 const CollapsibleCard = ({ title, children, actions = null, defaultOpen = true }) => {
   const [open, setOpen] = React.useState(defaultOpen);
   return (
-    <div className="bg-white rounded-lg border border-blue-100 shadow-sm">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-blue-100 bg-blue-50/50">
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-5 bg-blue-300 rounded-full" />
-          <h3 className="font-semibold text-blue-900 text-base">{title}</h3>
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
+        <div className="flex items-center gap-3">
+          <span className="inline-block w-1.5 h-5 bg-blue-400 rounded-full" />
+          <h3 className="font-semibold text-blue-900 text-base tracking-tight">{title}</h3>
         </div>
         <div className="flex items-center gap-2">
           {actions}
           <button
             onClick={() => setOpen(o => !o)}
-            className="text-blue-700 hover:text-blue-900 text-xs"
+            className="inline-flex items-center gap-1.5 text-blue-700 hover:text-blue-900 text-xs px-2 py-1 rounded-md hover:bg-blue-100/40 transition-colors"
             title={open ? 'พับเก็บ' : 'แสดง'}
+            aria-expanded={open}
           >
-            {open ? 'ย่อ' : 'แสดง'}
+            <span className="hidden sm:inline">{open ? 'ย่อ' : 'แสดง'}</span>
+            <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : 'rotate-180'}`} />
           </button>
         </div>
       </div>
       {open && (
-        <div className="p-4">
+        <div className="p-4 sm:p-5">
           {children}
         </div>
       )}
@@ -89,6 +99,17 @@ const CombinedDashboardAnalyticsPage = ({
   sort = { column: null, order: null },
   onSortChange
 }) => {
+  const norm = (v) => (typeof v === 'string' ? v.trim() : v);
+  const isEmptyish = (v) => {
+    const val = norm(v);
+    if (val === undefined || val === null || val === '') return true;
+    const lowered = String(val).toLowerCase();
+    return [
+      'ไม่ระบุ', 'ไม่ระบุเวลา', 'ไม่ระบุชื่อ', 'ไม่ระบุสถานที่',
+      'n/a', 'na', '-', '—', 'unspecified', 'not specified'
+    ].includes(lowered);
+  };
+  const clean = (v) => (isEmptyish(v) ? '' : v);
   const [activeView, setActiveView] = useState('overview');
   const [analyticsRange, setAnalyticsRange] = useState('7d'); // kept but graphs removed
   const [suspectDetail, setSuspectDetail] = useState(null);
@@ -96,6 +117,66 @@ const CombinedDashboardAnalyticsPage = ({
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshIntervalSec] = useState(60);
   const [showIncidentChart, setShowIncidentChart] = useState(true);
+  const [logsFilter, setLogsFilter] = useState(null); // { type: 'location'|'reason', value: string }
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const alertsRef = useRef(null);
+
+  useEffect(() => {
+    const onClick = (e) => {
+      if (!alertsRef.current) return;
+      if (alertsOpen && !alertsRef.current.contains(e.target)) setAlertsOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [alertsOpen]);
+
+  const headerComputed = useMemo(() => {
+    let last = null; let total = 0; let denied = 0;
+    const byUser = new Map();
+    (logData || []).forEach(l => {
+      const dt = l.dateTime ? new Date(l.dateTime) : (l.accessTime ? new Date(l.accessTime) : null);
+      if (!dt || isNaN(dt)) return;
+      if (!last || dt > last) last = dt;
+      total++;
+      const isDenied = l.allow === false || l.status === 'denied' || l.accessResult === 'DENIED';
+      if (isDenied) denied++;
+      const user = l.cardName || l.cardNumber || 'Unknown';
+      const loc = l.location || l.door || '';
+      const reason = (l.reason || '').toString().toLowerCase();
+      const arr = byUser.get(user) || [];
+      arr.push({ time: dt, loc, denied: isDenied, reason });
+      byUser.set(user, arr);
+    });
+
+    let alerts = 0; const list = [];
+    for (const [user, arrRaw] of byUser.entries()) {
+      const arr = arrRaw.slice().sort((a, b) => a.time - b.time);
+      const den = arr.filter(a => a.denied).length;
+      if (den >= 3) {
+        alerts++;
+        list.push({ type: 'MULTIPLE_DENIED', risk: 'high', description: `${user} ถูกปฏิเสธ ${den} ครั้ง`, who: user, location: arr[0].loc, time: arr[arr.length - 1].time });
+      }
+      for (let i = 1; i < arr.length; i++) {
+        const diff = (arr[i].time - arr[i - 1].time) / (1000 * 60);
+        if (diff <= 5 && arr[i].loc !== arr[i - 1].loc) {
+          alerts++;
+          const from = arr[i - 1].loc || '-';
+          const to = arr[i].loc || '-';
+          list.push({ type: 'RAPID_DIFF_LOC', risk: 'medium', description: `${user} เปลี่ยนจุดภายใน 5 นาที`, who: user, location: `${from} → ${to}` , time: arr[i].time });
+          break;
+        }
+      }
+      const off = arr.find(a => { const h = a.time.getHours(); return h >= 22 || h <= 6; });
+      if (off) { alerts++; list.push({ type: 'OFF_HOURS', risk: 'medium', description: `${user} ใช้นอกเวลาทำการ`, who: user, location: off.loc, time: off.time }); }
+      const lost = arr.find(a => a.reason.includes('lost') || a.reason.includes('stolen'));
+      if (lost) { alerts++; list.push({ type: 'LOST_STOLEN', risk: 'high', description: `${user} เหตุผลเกี่ยวกับบัตรหาย/ถูกขโมย`, who: user, location: lost.loc, time: lost.time }); }
+    }
+    list.sort((a, b) => (b.time?.getTime?.() || 0) - (a.time?.getTime?.() || 0));
+    const denyRate = total > 0 ? (denied / total) * 100 : 0;
+    const risk = denyRate > 10 ? { label: 'สูง', cls: 'bg-red-500' } : denyRate > 5 ? { label: 'กลาง', cls: 'bg-yellow-500' } : { label: 'ต่ำ', cls: 'bg-green-500' };
+    return { last, alerts, risk, list };
+  }, [logData]);
+
 
   const scrollToSection = (id) => {
     if (typeof document === 'undefined') return;
@@ -130,11 +211,11 @@ const CombinedDashboardAnalyticsPage = ({
         id: alertId++,
         alertType: 'ACCESS_DENIED',
         severity: log.reason && log.reason.includes('INVALID') ? 'high' : 'medium',
-        cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
-        location: log.location || log.door || 'ไม่ระบุ',
+        cardName: clean(log.cardName || log.cardNumber),
+        location: clean(log.location || log.door),
         accessTime: log.dateTime,
         reason: log.reason || 'การเข้าถึงถูกปฏิเสธ',
-        userType: log.userType || 'ไม่ระบุ'
+        userType: clean(log.userType)
       });
     });
 
@@ -152,11 +233,11 @@ const CombinedDashboardAnalyticsPage = ({
                 id: alertId++,
                 alertType: 'UNUSUAL_TIME',
                 severity: (hour >= 23 || hour <= 5) ? 'high' : 'medium',
-                cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
-                location: log.location || log.door || 'ไม่ระบุ',
+                cardName: clean(log.cardName || log.cardNumber),
+                location: clean(log.location || log.door),
                 accessTime: log.dateTime,
                 reason: `เข้าถึงนอกเวลา (${hour.toString().padStart(2, '0')}:00) ${dayOfWeek === 0 ? '(วันอาทิตย์)' : dayOfWeek === 6 ? '(วันเสาร์)' : ''}`,
-                userType: log.userType || 'ไม่ระบุ'
+                userType: clean(log.userType)
               });
             }
           }
@@ -182,11 +263,11 @@ const CombinedDashboardAnalyticsPage = ({
           id: alertId++,
           alertType: 'MULTIPLE_ATTEMPTS',
           severity: attempts.length >= 3 ? 'high' : 'medium',
-          cardName: latest.cardName || latest.cardNumber || 'ไม่ระบุ',
-          location: latest.location || latest.door || 'ไม่ระบุ',
+          cardName: clean(latest.cardName || latest.cardNumber),
+          location: clean(latest.location || latest.door),
           accessTime: latest.dateTime,
           reason: `พยายามเข้าถึงล้มเหลว ${attempts.length} ครั้ง`,
-          userType: latest.userType || 'ไม่ระระบุ'
+          userType: clean(latest.userType)
         });
       }
     });
@@ -197,30 +278,31 @@ const CombinedDashboardAnalyticsPage = ({
       return dateB - dateA;
     });
 
+    const finalAlerts = generatedAlerts.filter(a => !isEmptyish(a.cardName) || !isEmptyish(a.location) || !isEmptyish(a.reason));
     switch (selectedSecurityKPI) {
       case 'high':
-        return generatedAlerts.filter(alert => alert.severity === 'high');
+        return finalAlerts.filter(alert => alert.severity === 'high');
       case 'medium':
-        return generatedAlerts.filter(alert => alert.severity === 'medium');
+        return finalAlerts.filter(alert => alert.severity === 'medium');
       case 'low':
-        return generatedAlerts.filter(alert => alert.severity === 'low');
+        return finalAlerts.filter(alert => alert.severity === 'low');
       case 'access_denied':
-        return generatedAlerts.filter(alert => alert.alertType === 'ACCESS_DENIED');
+        return finalAlerts.filter(alert => alert.alertType === 'ACCESS_DENIED');
       case 'unusual_time':
-        return generatedAlerts.filter(alert => alert.alertType === 'UNUSUAL_TIME');
+        return finalAlerts.filter(alert => alert.alertType === 'UNUSUAL_TIME');
       case 'multiple_attempts':
-        return generatedAlerts.filter(alert => alert.alertType === 'MULTIPLE_ATTEMPTS');
+        return finalAlerts.filter(alert => alert.alertType === 'MULTIPLE_ATTEMPTS');
       case 'risk_locations':
-        return generatedAlerts.filter(alert => alert.location && alert.location !== 'ไม่ระบุ');
+        return finalAlerts.filter(alert => !isEmptyish(alert.location));
       case 'suspicious_users':
-        return generatedAlerts.filter(alert => alert.cardName && alert.cardName !== 'ไม่ระบุ');
+        return finalAlerts.filter(alert => !isEmptyish(alert.cardName));
       case 'today_events':
         const today = new Date().toDateString();
-        return generatedAlerts.filter(alert => new Date(alert.accessTime).toDateString() === today);
+        return finalAlerts.filter(alert => new Date(alert.accessTime).toDateString() === today);
       case 'compliance':
-        return generatedAlerts.filter(alert => alert.severity !== 'high');
+        return finalAlerts.filter(alert => alert.severity !== 'high');
       default:
-        return generatedAlerts;
+        return finalAlerts;
     }
   }, [logData, selectedSecurityKPI]);
 
@@ -323,6 +405,94 @@ const CombinedDashboardAnalyticsPage = ({
     ...stats
   };
 
+  // Export a concise snapshot report (Markdown)
+  const exportDashboardSnapshot = () => {
+    const now = new Date();
+    // Derive freshness (last update)
+    let last = null;
+    (logData || []).forEach(l => {
+      const dt = l.dateTime ? new Date(l.dateTime) : (l.accessTime ? new Date(l.accessTime) : null);
+      if (!dt || isNaN(dt)) return; if (!last || dt > last) last = dt;
+    });
+
+    const total = safeStats.total_records || 0;
+    const success = safeStats.success_count || 0;
+    const denied = safeStats.denied_count || 0;
+    const successRate = safeStats.success_rate || 0;
+
+    // Today vs 7d
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start7d = new Date(startOfToday); start7d.setDate(startOfToday.getDate() - 7);
+    let todayTotal=0, todayDenied=0, total7d=0, denied7d=0;
+    (logData || []).forEach(l => {
+      const dt = l.dateTime ? new Date(l.dateTime) : (l.accessTime ? new Date(l.accessTime) : null); if (!dt || isNaN(dt)) return;
+      const isDenied = l.allow === false || l.status === 'denied' || l.accessResult === 'DENIED';
+      if (dt >= startOfToday && dt <= now) { todayTotal++; if (isDenied) todayDenied++; }
+      else if (dt >= start7d && dt < startOfToday) { total7d++; if (isDenied) denied7d++; }
+    });
+    const todayRate = todayTotal>0 ? Math.round((todayDenied/todayTotal)*100) : 0;
+    const avgPerDay = Math.round(total7d/7);
+    const avgRate = total7d>0 ? Math.round((denied7d/total7d)*100) : 0;
+
+    // Direction ratio
+    const dir = (chartData?.directionData || []).reduce((acc, i)=>{
+      const key = (i.direction || i.name || '').toString().trim().toUpperCase();
+      const v = parseInt(i.count || i.value || 0) || 0; if (key==='IN') acc.IN+=v; else if (key==='OUT') acc.OUT+=v; acc.total+=v; return acc;
+    }, {IN:0, OUT:0, total:0});
+    const inPct = dir.total>0 ? Math.round((dir.IN/dir.total)*100) : 0;
+    const outPct = 100 - inPct;
+
+    const topLoc = (chartData?.locationData || [])
+      .map(i => ({ name: i.location || i.locationDisplay || '', count: parseInt(i.count)||0 }))
+      .filter(i=>i.name)
+      .sort((a,b)=>b.count-a.count)
+      .slice(0,5);
+
+    const reasonMap = new Map();
+    (logData || []).forEach(l => { const d = l.allow===false || l.status==='denied' || l.accessResult==='DENIED'; if (!d) return; const r = (l.reason||'').toString().trim(); if (!r) return; reasonMap.set(r,(reasonMap.get(r)||0)+1); });
+    const topReasons = Array.from(reasonMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+    const sus = computeSuspicionByUser(logData||[],5);
+
+    const lines = [];
+    lines.push(`# รายงานภาพรวมระบบ (Snapshot)`);
+    lines.push(`ออกรายงาน: ${now.toLocaleString('th-TH')}`);
+    lines.push(`อัปเดตล่าสุด: ${last ? last.toLocaleString('th-TH') : '-'}`);
+    lines.push('');
+    lines.push(`## KPI หลัก`);
+    lines.push(`- รวมทั้งหมด: ${total.toLocaleString('th-TH')}`);
+    lines.push(`- สำเร็จ: ${success.toLocaleString('th-TH')}`);
+    lines.push(`- ปฏิเสธ: ${denied.toLocaleString('th-TH')}`);
+    lines.push(`- อัตราสำเร็จ: ${successRate}%`);
+    lines.push('');
+    lines.push(`## วันนี้ vs เฉลี่ย 7 วัน`);
+    lines.push(`- วันนี้: ${todayTotal.toLocaleString('th-TH')} (Deny ${todayRate}%)`);
+    lines.push(`- เฉลี่ย/วัน (7 วัน): ${avgPerDay.toLocaleString('th-TH')} (Deny ${avgRate}%)`);
+    lines.push('');
+    lines.push(`## สัดส่วนทิศทาง`);
+    lines.push(`- IN ${inPct}% • OUT ${outPct}% (รวม ${dir.total.toLocaleString('th-TH')})`);
+    lines.push('');
+    lines.push(`## Top สถานที่`);
+    topLoc.forEach((l,idx)=>lines.push(`${idx+1}. ${l.name} — ${l.count.toLocaleString('th-TH')}`));
+    if (topLoc.length===0) lines.push('- ไม่มีข้อมูล');
+    lines.push('');
+    lines.push(`## เหตุผลปฏิเสธยอดฮิต`);
+    topReasons.forEach(([r,c],idx)=>lines.push(`${idx+1}. ${r} — ${c.toLocaleString('th-TH')}`));
+    if (topReasons.length===0) lines.push('- ไม่มีข้อมูล');
+    lines.push('');
+    lines.push(`## ผู้ใช้น่าสงสัย (Top 5)`);
+    if (sus.length===0) lines.push('- ไม่มีข้อมูล');
+    sus.forEach((u,idx)=> lines.push(`${idx+1}. ${u.user} — คะแนน ${u.score} (ปฏิเสธ ${u.counts?.denied||0}, นอกเวลา ${u.counts?.offHours||0})`));
+
+    const md = lines.join('\n');
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dashboard_report_${now.toISOString().slice(0,10)}.md`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+
   const getTrendUI = (trend) => {
     switch (trend) {
       case 'increasing':
@@ -356,43 +526,7 @@ const CombinedDashboardAnalyticsPage = ({
     };
   };
 
-  const views = [
-    { id: 'overview', label: 'ภาพรวม', icon: LayoutDashboard, description: 'สรุปสำคัญและแนวโน้ม' }
-  ];
-
-  // Lightweight mini sparkline component (no external chart lib)
-  const MiniSparkline = ({ points = [], width = 140, height = 40, stroke = '#2563eb' }) => {
-    if (!points || points.length === 0) {
-      return <div className="h-10 flex items-center text-xs text-gray-400">ไม่มีข้อมูล</div>;
-    }
-    const max = Math.max(...points);
-    const min = Math.min(...points);
-    const span = Math.max(1, max - min);
-    const stepX = points.length > 1 ? (width - 4) / (points.length - 1) : width - 4;
-    const path = points
-      .map((v, i) => {
-        const x = 2 + i * stepX;
-        const y = 2 + (height - 4) - ((v - min) / span) * (height - 4);
-        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-    return (
-      <svg width={width} height={height} className="overflow-visible">
-        <polyline fill="none" stroke="#bfdbfe" strokeWidth="2" points={points.map((v,i)=>{
-          const x = 2 + i * stepX; const y = 2 + (height - 4) - ((v - min) / span) * (height - 4); return `${x},${y}`;
-        }).join(' ')} />
-        <path d={path} fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    );
-  };
-
   const renderOverview = () => {
-    // เตรียม Top 5 สถานที่จากข้อมูลกราฟ location
-    const topLocations = (safeChartData.locationData || [])
-      .map(i => ({ name: i.location || i.locationDisplay || 'ไม่ระบุ', count: parseInt(i.count) || 0 }))
-      .sort((a,b) => b.count - a.count)
-      .slice(0,5);
-
     // Today vs 7-day average (แทน sparkline 24 ชม.)
     const todayVs7d = (() => {
       const now = new Date();
@@ -411,28 +545,6 @@ const CombinedDashboardAnalyticsPage = ({
       const todayRate = todayTotal > 0 ? Math.round((todayDenied / todayTotal) * 100) : 0;
       const max = Math.max(1, todayTotal, avgPerDay);
       return { todayTotal, todayRate, avgPerDay, avgRate, todayPct: Math.round((todayTotal/max)*100), avgPct: Math.round((avgPerDay/max)*100) };
-    })();
-
-    // อัตราส่วน IN/OUT แบบสรุป
-    const dirStats = (safeChartData.directionData || []).reduce((acc, i) => {
-      const key = (i.direction || i.name || '').toUpperCase();
-      const v = parseInt(i.count || i.value || 0) || 0;
-      if (key === 'IN') acc.IN += v; else if (key === 'OUT') acc.OUT += v;
-      acc.total += v; return acc;
-    }, { IN:0, OUT:0, total:0 });
-
-    // Data freshness (last updated) and last 24h count
-    const freshness = (() => {
-      let last = null, last24h = 0;
-      const now = new Date();
-      (logData || []).forEach(l => {
-        const dt = l.dateTime ? new Date(l.dateTime) : null;
-        if (!dt || isNaN(dt)) return;
-        if (!last || dt > last) last = dt;
-        const diffH = (now - dt) / (1000*60*60);
-        if (diffH >= 0 && diffH <= 24) last24h += 1;
-      });
-      return { last, last24h };
     })();
 
     // KPI delta: denied rate compared with previous 7 days
@@ -479,16 +591,22 @@ const CombinedDashboardAnalyticsPage = ({
         if (dt >= startToday) {
           t_total++; if (denied) t_denied++; if (off) t_off++;
           if (denied) {
-            const key = `${l.cardName || l.cardNumber || '-'}|${l.location || l.door || '-'}`;
-            attemptsToday.set(key, (attemptsToday.get(key) || 0) + 1);
+            const u = clean(l.cardName || l.cardNumber); const loc = clean(l.location || l.door);
+            if (isEmptyish(u) || isEmptyish(loc)) { /* skip */ } else {
+              const key = `${u}|${loc}`;
+              attemptsToday.set(key, (attemptsToday.get(key) || 0) + 1);
+            }
           }
         } else if (dt >= startPrev && dt < startToday) {
           p_total++; if (denied) p_denied++; if (off) p_off++;
           if (denied) {
             const dk = `${dt.getFullYear()}-${dt.getMonth()+1}-${dt.getDate()}`;
             const dayMap = attemptsPrevByDay.get(dk) || new Map();
-            const key = `${l.cardName || l.cardNumber || '-'}|${l.location || l.door || '-'}`;
-            dayMap.set(key, (dayMap.get(key) || 0) + 1);
+            const u = clean(l.cardName || l.cardNumber); const loc = clean(l.location || l.door);
+            if (!(isEmptyish(u) || isEmptyish(loc))) {
+              const key = `${u}|${loc}`;
+              dayMap.set(key, (dayMap.get(key) || 0) + 1);
+            }
             attemptsPrevByDay.set(dk, dayMap);
           }
         }
@@ -520,21 +638,23 @@ const CombinedDashboardAnalyticsPage = ({
       deniedLogs.forEach(l => items.push({
         type: 'DENIED',
         when: l.dateTime,
-        user: l.cardName || l.cardNumber || 'ไม่ระบุ',
-        location: l.location || l.door || 'ไม่ระบุ',
-        reason: l.reason || 'ถูกปฏิเสธ'
+        user: clean(l.cardName || l.cardNumber),
+        location: clean(l.location || l.door),
+        reason: clean(l.reason) || 'ถูกปฏิเสธ'
       }));
       (logData || []).forEach(l => {
         const dt = l.dateTime ? new Date(l.dateTime) : null; if (!dt || isNaN(dt)) return;
         const h = dt.getHours(); const d = dt.getDay();
-        if ((l.allow === true || l.allow === 1) && (h >= 22 || h <= 6 || d===0 || d===6)) {
-          items.push({ type: 'OFF_HOURS', when: l.dateTime, user: l.cardName || l.cardNumber || 'ไม่ระบุ', location: l.location || l.door || 'ไม่ระบุ', hour: h });
+        if ((l.allow === true || l.allow === 1) && (h >= 22 || h <= 6) || (d===0 || d===6)) {
+          items.push({ type: 'OFF_HOURS', when: l.dateTime, user: clean(l.cardName || l.cardNumber), location: clean(l.location || l.door), hour: h });
         }
       });
       // multiple attempts by user-location
       const attempts = new Map();
       deniedLogs.forEach(l => {
-        const key = `${l.cardName || l.cardNumber || '-'}|${l.location || l.door || '-'}`;
+        const u = clean(l.cardName || l.cardNumber); const loc = clean(l.location || l.door);
+        if (isEmptyish(u) || isEmptyish(loc)) return;
+        const key = `${u}|${loc}`;
         attempts.set(key, (attempts.get(key) || 0) + 1);
       });
       attempts.forEach((cnt, key) => {
@@ -562,28 +682,6 @@ const CombinedDashboardAnalyticsPage = ({
       return deduped.slice(0,5);
     })();
 
-    // Risky hours (7 วัน): คะแนน = denied*2 + off-hours allowed*1
-    const riskyHoursTop = (() => {
-      const now = new Date();
-      const start7 = new Date(now.getTime() - 7*24*60*60*1000);
-      const buckets = Array.from({ length: 24 }, (_, h) => ({ hour: h, score: 0, count: 0 }));
-      (logData || []).forEach(l => {
-        const dt = l.dateTime ? new Date(l.dateTime) : null; if (!dt || isNaN(dt) || dt < start7 || dt > now) return;
-        const h = dt.getHours(); const d = dt.getDay();
-        const denied = l.allow === false || l.status === 'denied' || l.accessResult === 'DENIED';
-        const off = (h >= 22 || h <= 6) || (d === 0 || d === 6);
-        const b = buckets[h];
-        b.count += 1;
-        if (denied) b.score += 2;
-        if (!denied && off) b.score += 1; // allowed off-hours still adds risk
-      });
-      return buckets
-        .filter(b => b.count > 0 || b.score > 0)
-        .sort((a,b) => (b.score - a.score) || (b.count - a.count))
-        .slice(0, 6)
-        .map(b => ({ label: `${String(b.hour).padStart(2,'0')}:00`, value: b.score, count: b.count, color: '#9333ea' }));
-    })();
-
     // Risk bands (users)
     const bands = (() => {
       const all = computeSuspicionAll(logData || []);
@@ -594,190 +692,179 @@ const CombinedDashboardAnalyticsPage = ({
       return { low, mid, high, total: all.length };
     })();
 
-    // Suspicious users with explainable score
-    const suspiciousUsers = computeSuspicionByUser(logData || [], 5);
+    // Suspicious users with explainable score (Top 10)
+    const suspiciousUsers = computeSuspicionByUser(logData || [], 10);
+
+    const exportDashboardReport = () => {
+      const now = new Date();
+      // KPIs
+      const total = safeStats.total_records || 0;
+      const success = safeStats.success_count || 0;
+      const denied = safeStats.denied_count || 0;
+      const successRate = safeStats.success_rate || 0;
+      const lastUpdated = freshness.last ? new Date(freshness.last).toLocaleString('th-TH') : '-';
+
+      // Today vs 7d (recompute quickly)
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const start7d = new Date(startOfToday); start7d.setDate(startOfToday.getDate() - 7);
+      let todayTotal=0, todayDenied=0, total7d=0, denied7d=0;
+      (logData || []).forEach(l => {
+        const dt = l.dateTime ? new Date(l.dateTime) : null; if (!dt || isNaN(dt)) return;
+        const isDenied = l.allow === false || l.status === 'denied' || l.accessResult === 'DENIED';
+        if (dt >= startOfToday && dt <= now) { todayTotal++; if (isDenied) todayDenied++; }
+        else if (dt >= start7d && dt < startOfToday) { total7d++; if (isDenied) denied7d++; }
+      });
+      const todayRate = todayTotal>0 ? Math.round((todayDenied/todayTotal)*100) : 0;
+      const avgPerDay = Math.round(total7d/7);
+      const avgRate = total7d>0 ? Math.round((denied7d/total7d)*100) : 0;
+
+      // Direction ratio
+      const dir = (chartData?.directionData || []).reduce((acc, i)=>{
+        const key = (i.direction || i.name || '').toString().trim().toUpperCase();
+        const v = parseInt(i.count || i.value || 0) || 0; if (key==='IN') acc.IN+=v; else if (key==='OUT') acc.OUT+=v; acc.total+=v; return acc;
+      }, {IN:0, OUT:0, total:0});
+      const inPct = dir.total>0 ? Math.round((dir.IN/dir.total)*100) : 0;
+      const outPct = 100 - inPct;
+
+      // Top locations (reuse computed topLocations below)
+      const topLoc = (chartData?.locationData || [])
+        .map(i => ({ name: i.location || i.locationDisplay || '', count: parseInt(i.count)||0 }))
+        .filter(i=>i.name)
+        .sort((a,b)=>b.count-a.count)
+        .slice(0,5);
+
+      // Denied reasons (simple)
+      const reasonMap = new Map();
+      (logData || []).forEach(l => { const d = l.allow===false || l.status==='denied' || l.accessResult==='DENIED'; if (!d) return; const r = (l.reason||'').toString().trim(); if (!r) return; reasonMap.set(r,(reasonMap.get(r)||0)+1); });
+      const topReasons = Array.from(reasonMap.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+      // Suspicious users brief (top 5)
+      const sus = computeSuspicionByUser(logData||[],5);
+
+      const lines = [];
+      lines.push(`# รายงานภาพรวมระบบ (Snapshot)`);
+      lines.push(`ออกรายงาน: ${now.toLocaleString('th-TH')}`);
+      lines.push(`อัปเดตล่าสุด: ${lastUpdated}`);
+      lines.push('');
+      lines.push(`## KPI หลัก`);
+      lines.push(`- รวมทั้งหมด: ${total.toLocaleString('th-TH')}`);
+      lines.push(`- สำเร็จ: ${success.toLocaleString('th-TH')}`);
+      lines.push(`- ปฏิเสธ: ${denied.toLocaleString('th-TH')}`);
+      lines.push(`- อัตราสำเร็จ: ${successRate}%`);
+      lines.push('');
+      lines.push(`## วันนี้ vs เฉลี่ย 7 วัน`);
+      lines.push(`- วันนี้: ${todayTotal.toLocaleString('th-TH')} (Deny ${todayRate}%)`);
+      lines.push(`- เฉลี่ย/วัน (7 วัน): ${avgPerDay.toLocaleString('th-TH')} (Deny ${avgRate}%)`);
+      lines.push('');
+      lines.push(`## สัดส่วนทิศทาง`);
+      lines.push(`- IN ${inPct}% • OUT ${outPct}% (รวม ${dir.total.toLocaleString('th-TH')})`);
+      lines.push('');
+      lines.push(`## Top สถานที่`);
+      topLoc.forEach((l,idx)=>lines.push(`${idx+1}. ${l.name} — ${l.count.toLocaleString('th-TH')}`));
+      if (topLoc.length===0) lines.push('- ไม่มีข้อมูล');
+      lines.push('');
+      lines.push(`## เหตุผลปฏิเสธยอดฮิต`);
+      topReasons.forEach(([r,c],idx)=>lines.push(`${idx+1}. ${r} — ${c.toLocaleString('th-TH')}`));
+      if (topReasons.length===0) lines.push('- ไม่มีข้อมูล');
+      lines.push('');
+      lines.push(`## ผู้ใช้น่าสงสัย (Top 5)`);
+      if (sus.length===0) lines.push('- ไม่มีข้อมูล');
+      sus.forEach((u,idx)=> lines.push(`${idx+1}. ${u.user} — คะแนน ${u.score} (ปฏิเสธ ${u.counts?.denied||0}, นอกเวลา ${u.counts?.offHours||0})`));
+
+      const md = lines.join('\n');
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dashboard_report_${now.toISOString().slice(0,10)}.md`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
 
     return (
-      <div className="space-y-6">
-        {/* 1) KPIs */}
-        <StatsCards stats={safeStats} loading={loading} />
+      <div className="space-y-4 max-w-7xl mx-auto w-full">
+        {/* Snapshot banner removed per request (duplicate section) */}
 
-        {/* 2) กราฟย่อ (ไม่หนักเครื่อง) - รวมเป็นบล็อกเดียวและพับเก็บได้ */}
-        <CollapsibleCard title="กราฟย่อ">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <div className="text-sm font-medium text-blue-900 mb-1">วันนี้ เทียบค่าเฉลี่ย 7 วัน</div>
-              <div className="text-xs text-gray-600">จำนวนเหตุการณ์</div>
-              <div className="mt-1 h-2 bg-gray-100 rounded overflow-hidden flex">
-                <div className="bg-blue-600" style={{ width: `${todayVs7d.todayPct}%` }} title={`วันนี้ ${todayVs7d.todayTotal.toLocaleString('th-TH')}`} />
-                <div className="bg-gray-200" style={{ width: `${100 - todayVs7d.todayPct}%` }} />
-              </div>
-              <div className="mt-1 text-[11px] text-gray-600">วันนี้ {todayVs7d.todayTotal.toLocaleString('th-TH')} รายการ</div>
-              <div className="mt-3 text-xs text-gray-600">เฉลี่ย 7 วัน</div>
-              <div className="mt-1 h-2 bg-gray-100 rounded overflow-hidden flex">
-                <div className="bg-indigo-400" style={{ width: `${todayVs7d.avgPct}%` }} title={`เฉลี่ย/วัน ${todayVs7d.avgPerDay.toLocaleString('th-TH')}`} />
-                <div className="bg-gray-200" style={{ width: `${100 - todayVs7d.avgPct}%` }} />
-              </div>
-              <div className="mt-1 text-[11px] text-gray-600">เฉลี่ย/วัน {todayVs7d.avgPerDay.toLocaleString('th-TH')}</div>
-              <div className="mt-2 text-[11px] text-gray-600">อัตราถูกปฏิเสธ: วันนี้ {todayVs7d.todayRate}% • 7 วัน {todayVs7d.avgRate}%</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-blue-900 mb-2">สัดส่วนทิศทาง</div>
-              {(() => {
-                const total = Math.max(1, dirStats.total);
-                const inPct = Math.round((dirStats.IN/total)*100);
-                const outPct = 100 - inPct;
-                return (
-                  <div>
-                    <div className="flex h-3 w-full rounded bg-gray-100 overflow-hidden border">
-                      <div className="bg-emerald-500" style={{ width: `${inPct}%` }} />
-                      <div className="bg-red-500" style={{ width: `${outPct}%` }} />
-                    </div>
-                    <div className="mt-1 text-[11px] text-gray-600">IN {inPct}% • OUT {outPct}%</div>
-                  </div>
-                );
-              })()}
-            </div>
-            <div>
-              <div className="text-sm font-medium text-blue-900 mb-2">Top 5 สถานที่</div>
-              <ul className="space-y-1">
-                {topLocations.map((l, i) => {
-                  const max = topLocations[0]?.count || 1;
-                  const pct = Math.round((l.count / Math.max(1,max)) * 100);
-                  return (
-                    <li key={i} className="text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="truncate mr-2">{i+1}. {l.name}</span>
-                        <span className="text-gray-600">{l.count.toLocaleString('th-TH')}</span>
-                      </div>
-                      <div className="h-2 w-full bg-gray-100 rounded overflow-hidden">
-                        <div className="h-2 bg-blue-500" style={{ width: `${pct}%` }} />
-                      </div>
-                    </li>
-                  );
-                })}
-                {topLocations.length === 0 && (
-                  <li className="text-gray-400">ไม่มีข้อมูล</li>
-                )}
-              </ul>
-            </div>
-          </div>
-        </CollapsibleCard>
+        {/* Row 1: KPI */}
+        <EnhancedStatsCards logData={logData} />
 
-        {/* 3) KPI Delta / Freshness / Risk bands */}
-        <CollapsibleCard title="KPI & สถานะข้อมูล">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <div className="text-xs text-gray-500 mb-1">อัปเดตล่าสุด</div>
-              <div className="text-sm text-gray-800">{freshness.last ? new Date(freshness.last).toLocaleString('th-TH') : '-'}</div>
-              <div className="text-xs text-gray-600 mt-1">24 ชม.ล่าสุด: {freshness.last24h.toLocaleString('th-TH')} รายการ</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 mb-1">อัตราถูกปฏิเสธ (7 วัน)</div>
-              <div className="flex items-baseline gap-2">
-                <div className="text-2xl font-bold text-gray-900">{kpiDelta.curRate}%</div>
-                <div className={`text-sm ${kpiDelta.delta>0 ? 'text-red-600' : kpiDelta.delta<0 ? 'text-emerald-600' : 'text-gray-600'}`}>
-                  {kpiDelta.delta>0 ? '▲' : kpiDelta.delta<0 ? '▼' : '•'} {Math.abs(kpiDelta.delta)}% เทียบช่วงก่อน
-                </div>
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 mb-1">ระดับความเสี่ยงผู้ใช้</div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="text-gray-700">ต่ำ {bands.low}</span>
-                <span className="text-yellow-700">กลาง {bands.mid}</span>
-                <span className="text-red-700">สูง {bands.high}</span>
-                <span className="text-gray-400 ml-auto">รวม {bands.total}</span>
-              </div>
-            </div>
-          </div>
-        </CollapsibleCard>
-        
-        <CollapsibleCard title="เปรียบเทียบ วันนี้ vs เฉลี่ย 7 วัน">
-          {(() => {
-            const max = Math.max(1, ...compareTodayVs7d.flatMap(x => [x.today, x.avg]));
-            return (
-              <ul className="space-y-3">
-                {compareTodayVs7d.map((it, i) => (
-                  <li key={i} className="text-sm">
-                    <div className="mb-1 font-medium text-gray-900">{it.label}</div>
-                    <div className="flex items-center justify-between text-xs text-gray-600">
-                      <span>วันนี้</span>
-                      <span>{it.today.toLocaleString('th-TH')}</span>
-                    </div>
-                    <div className="h-2 w-full bg-gray-100 rounded overflow-hidden mb-2">
-                      <div className="h-2" style={{ width: `${Math.round((it.today/max)*100)}%`, background: it.colorA }} />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-gray-600">
-                      <span>เฉลี่ย 7 วัน</span>
-                      <span>{it.avg.toLocaleString('th-TH')}</span>
-                    </div>
-                    <div className="h-2 w-full bg-gray-100 rounded overflow-hidden">
-                      <div className="h-2" style={{ width: `${Math.round((it.avg/max)*100)}%`, background: it.colorB }} />
-                    </div>
+        {/* Row 2: Top Events (left) + Timeline (right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <TopEventsBarChart
+            logData={logData}
+            onSelect={() => { try { const el=document.getElementById('logs-focus'); if (el) el.scrollIntoView({behavior:'smooth'}); } catch {} }}
+          />
+          <TimelineDenied7d
+            logData={logData}
+            onSelect={(dayLabel)=>{ try { const el=document.getElementById('logs-focus'); if (el) el.scrollIntoView({behavior:'smooth'}); } catch {} }}
+          />
+        </div>
+
+        {/* Row 3: Denied Reasons (left) + Suspicious Users (right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <DeniedReasonsChart data={logData} loading={loading} />
+          <Card className="rounded-2xl border-gray-200 shadow-sm">
+            <CardHeader className="p-4 pb-0">
+              <CardTitle className="text-sm font-semibold text-gray-900">Top 10 ผู้ใช้น่าสงสัย</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <ul className="divide-y max-h-72 overflow-y-auto">
+                {suspiciousUsers.length === 0 ? (
+                  <li className="py-3 text-sm text-gray-500">ไม่มีข้อมูล</li>
+                ) : suspiciousUsers.map((u, idx) => (
+                  <li key={idx} className="py-2 text-sm flex justify-between items-center">
+                    <button
+                      className="min-w-0 text-left"
+                      onClick={() => setSuspectDetail(u)}
+                      title="อธิบายคะแนน"
+                    >
+                      <div className="font-medium text-gray-900 truncate">{idx+1}. {u.user}</div>
+                      <div className="text-xs text-gray-600 truncate">ปฏิเสธ {u.counts?.denied || 0} • นอกเวลา {u.counts?.offHours || 0} • ล่าสุด {u.lastTime ? new Date(u.lastTime).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-'}</div>
+                    </button>
+                    <div className="text-blue-600 font-semibold" title="คะแนนความสงสัย">{u.score}</div>
                   </li>
                 ))}
               </ul>
-            );
-          })()}
-        </CollapsibleCard>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* 4) สรุปย่อ: ผู้ใช้น่าสงสัย + เหตุผลที่ถูกปฏิเสธบ่อย */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <CollapsibleCard title="Top 10 ผู้ใช้น่าสงสัย">
-            <ul className="divide-y">
-              {suspiciousUsers.length === 0 ? (
-                <li className="py-3 text-sm text-gray-500">ไม่มีข้อมูล</li>
-              ) : suspiciousUsers.map((u, idx) => (
-                <li key={idx} className="py-2 text-sm flex justify-between items-center">
-                  <button
-                    className="min-w-0 text-left"
-                    onClick={() => setSuspectDetail(u)}
-                    title="อธิบายคะแนน"
-                  >
-                    <div className="font-medium text-gray-900 truncate">{idx+1}. {u.user}</div>
-                    <div className="text-xs text-gray-600 truncate">ปฏิเสธ {u.counts?.denied || 0} • นอกเวลา {u.counts?.offHours || 0} • ล่าสุด {u.lastTime ? new Date(u.lastTime).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-'}</div>
-                  </button>
-                  <div className="text-blue-600 font-semibold" title="คะแนนความสงสัย">{u.score}</div>
-                </li>
-              ))}
-            </ul>
-          </CollapsibleCard>
-          <CollapsibleCard title="เหตุผลที่ถูกปฏิเสธบ่อย">
+        {/* Row 4: Heatmap full width */}
+        <AccessHeatmap logData={logData} mode="avg" />
+
+        {/* Row 4: Review table */}
+        <ReviewTable
+          logData={logData}
+          onInspect={(r)=>{ try { setLogsFilter({ type:'user', value: r?.meta?.user || '' }); window.dispatchEvent(new CustomEvent('setActiveTab', { detail: 'logs' })); } catch {} }}
+        />
+
+        {/* Suspicious users moved above Top Events (to avoid duplication) */}
+
+        {/* (Optional) Logs filtered by selection */}
+        {logsFilter && (
+          <CollapsibleCard
+            title={`ตาราง Log — ${logsFilter.type === 'location' ? 'สถานที่' : 'เหตุผล'}: ${logsFilter.value}`}
+            actions={<button className="text-xs text-gray-600 hover:text-gray-900" onClick={()=>setLogsFilter(null)}>ล้างตัวกรอง</button>}
+          >
             {(() => {
-              const counts = new Map();
-              (logData || []).forEach(l => {
-                const denied = l.allow === false || l.status === 'denied' || l.accessResult === 'DENIED';
-                if (!denied) return;
-                const reason = l.reason || '-';
-                counts.set(reason, (counts.get(reason) || 0) + 1);
+              const rows = (logData || []).filter(l => {
+                if (logsFilter.type === 'location') {
+                  const loc = clean(l.location || l.door);
+                  return loc === logsFilter.value;
+                } else if (logsFilter.type === 'reason') {
+                  const rs = clean(l.reason);
+                  return rs === logsFilter.value;
+                }
+                return false;
               });
-              const totalDenied = Array.from(counts.values()).reduce((a,b)=>a+b,0) || 1;
-              const top = Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
-              if (top.length === 0) return (<div className="text-sm text-gray-500">ไม่มีข้อมูล</div>);
               return (
-                <ul className="divide-y">
-                  {top.map(([reason, cnt], i) => (
-                    <li key={i} className="py-2 text-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="truncate mr-2">{i+1}. {reason}</div>
-                        <div className="text-gray-700 whitespace-nowrap">{cnt.toLocaleString('th-TH')}</div>
-                      </div>
-                      {(() => { const pct = Math.round((cnt/totalDenied)*100); return (
-                        <div className="mt-1 h-1.5 bg-gray-100 rounded overflow-hidden">
-                          <div className="h-1.5 bg-red-500" style={{ width: `${pct}%` }} />
-                        </div>
-                      ); })()}
-                    </li>
-                  ))}
-                </ul>
+                <RecentAccessTable data={rows} onRowClick={onRowClick} currentSortColumn={'Date Time'} currentSortOrder={'DESC'} />
               );
             })()}
           </CollapsibleCard>
-        </div>
+        )}
 
-        {/* 5) Incident Feed + Top Doors by Fail-Rate */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 5) Incident Feed */}
+        <div className="grid grid-cols-1 gap-4" id="logs-focus">
           <CollapsibleCard
             title="เหตุการณ์ล่าสุด"
             actions={
@@ -795,13 +882,15 @@ const CombinedDashboardAnalyticsPage = ({
                 const attempts = new Map();
                 deniedLogs.forEach(l => {
                   const dt = l.dateTime ? new Date(l.dateTime) : null; if (dt && dt >= start24) denied++;
-                  const key = `${l.cardName || l.cardNumber || '-'}|${l.location || l.door || '-'}`;
+                  const u = clean(l.cardName || l.cardNumber); const loc = clean(l.location || l.door);
+                  if (isEmptyish(u) || isEmptyish(loc)) return;
+                  const key = `${u}|${loc}`;
                   attempts.set(key, (attempts.get(key) || 0) + 1);
                 });
                 (logData || []).forEach(l => {
                   const dt = l.dateTime ? new Date(l.dateTime) : null; if (!dt || dt < start24) return;
                   const h = dt.getHours(); const d = dt.getDay();
-                  if ((l.allow === true || l.allow === 1) && (h >= 22 || h <= 6 || d===0 || d===6)) off++;
+                  if ((l.allow === true || l.allow === 1) && (h >= 22 || h <= 6) || (d===0 || d===6)) off++;
                 });
                 attempts.forEach(c => { if (c>=3) multi++; });
                 const data = [
@@ -836,15 +925,8 @@ const CombinedDashboardAnalyticsPage = ({
               </ul>
             )}
           </CollapsibleCard>
-          <CollapsibleCard title="ช่วงเวลาที่เสี่ยง (7 วัน)">
-            <SimpleBarList
-              data={riskyHoursTop}
-              rightText={(d) => `${d.value} คะแนน • ${d.count.toLocaleString('th-TH')} ครั้ง`}
-            />
-          </CollapsibleCard>
         </div>
 
-        {/* Analytics graphs removed per request; keep concise overview only */}
         {suspectDetail && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setSuspectDetail(null)}>
             <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={(e)=>e.stopPropagation()}>
@@ -899,8 +981,10 @@ const CombinedDashboardAnalyticsPage = ({
                     const dt = it.dateTime ? new Date(it.dateTime) : null; if (dt && !isNaN(dt)) {
                       const h = dt.getHours(); const d = dt.getDay(); if (h >= 22 || h <= 6) offHours++; if (d===0||d===6) weekend++; if (!lastTime || dt>lastTime) lastTime = dt;
                     }
-                    users.add(it.cardName || it.cardNumber || '-');
-                    const rs = it.reason || '-'; reasons.set(rs, (reasons.get(rs) || 0) + 1);
+                    const usr = clean(it.cardName || it.cardNumber);
+                    if (!isEmptyish(usr)) users.add(usr);
+                    const rs = (it.reason ?? '').toString().trim();
+                    if (rs) reasons.set(rs, (reasons.get(rs) || 0) + 1);
                   }
                   const deniedRate = total > 0 ? Math.round((denied/total)*100) : 0;
                   const breakdown = [];
@@ -990,68 +1074,82 @@ const CombinedDashboardAnalyticsPage = ({
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-4 bg-gray-50 min-h-screen"> {/* เปลี่ยนจาก space-y-8 เป็น space-y-4 */}
+    <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-4 space-y-3 bg-gray-50">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 flex items-center">
-            <LayoutDashboard className="mr-3 h-6 w-6 text-blue-600" />
-            แดชบอร์ด & การวิเคราะห์
-          </h1>
-          <p className="text-gray-600 mt-1 text-sm">
-            ภาพรวม, สถิติ และการวิเคราะห์เชิงลึกของข้อมูลการเข้าถึง
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <div className="flex items-center space-x-2 text-gray-600 bg-white px-3 py-2 rounded-full shadow-sm border border-gray-200">
-            <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></div>
-            <span>ข้อมูลเป็นปัจจุบัน</span>
+      <header className="max-w-7xl mx-auto w-full">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900 flex items-center">
+              <LayoutDashboard className="mr-3 h-6 w-6 text-blue-600" />
+              แดชบอร์ด & การวิเคราะห์
+            </h1>
+            <p className="text-gray-600 mt-1 text-sm">
+              ภาพรวม, สถิติ และการวิเคราะห์เชิงลึกของข้อมูลการเข้าถึง
+            </p>
           </div>
-          <button
-            onClick={() => setAutoRefresh(v => !v)}
-            className={`px-3 py-2 rounded-full border shadow-sm ${autoRefresh ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'}`}
-            title={`Auto refresh ${autoRefresh ? 'ON' : 'OFF'} (${refreshIntervalSec}s)`}
-          >
-            Auto refresh {autoRefresh ? 'ON' : 'OFF'}
-          </button>
+          {(() => (
+            <div className="flex flex-wrap items-center gap-3 text-sm" ref={alertsRef}>
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white/80 backdrop-blur-sm shadow-sm">
+                <span className={`w-2.5 h-2.5 rounded-full ${headerComputed.risk.cls}`}></span>
+                <span className="text-gray-800">ความเสี่ยง: {headerComputed.risk.label}</span>
+              </span>
+
+              <div className="relative">
+                <button
+                  onClick={() => setAlertsOpen(v => !v)}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white/80 backdrop-blur-sm shadow-sm hover:bg-white"
+                  aria-expanded={alertsOpen}
+                >
+                  <span className="text-gray-800">แจ้งเตือน</span>
+                  <span className="px-1.5 py-0.5 rounded text-xs bg-red-600 text-white shadow-sm">{headerComputed.alerts}</span>
+                </button>
+
+                {alertsOpen && (
+                  <div className="absolute right-0 mt-2 w-[28rem] max-w-[90vw] bg-white rounded-xl shadow-xl ring-1 ring-black/5 overflow-hidden z-40">
+                    <div className="px-3 py-2 border-b bg-gray-50 text-gray-900 font-medium">รายการแจ้งเตือนล่าสุด</div>
+                    <div className="max-h-96 overflow-y-auto divide-y">
+                      {headerComputed.list.length === 0 && (
+                        <div className="p-4 text-sm text-gray-600">ไม่มีแจ้งเตือน</div>
+                      )}
+                      {headerComputed.list.slice(0, 20).map((it, idx) => (
+                        <div key={idx} className="p-3 hover:bg-gray-50">
+                          <div className="flex items-start gap-3">
+                            <span className={`mt-0.5 inline-block w-2 h-2 rounded-full ${it.risk==='high' ? 'bg-red-500' : it.risk==='medium' ? 'bg-yellow-500' : 'bg-green-500'}`}></span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-900 truncate">{it.description}</div>
+                              <div className="text-xs text-gray-600 flex flex-wrap gap-2 mt-0.5">
+                                {it.who && <span className="truncate">👤 {it.who}</span>}
+                                {it.location && <span className="truncate">📍 {it.location}</span>}
+                                {it.time && <span className="truncate">🕒 {new Date(it.time).toLocaleString('th-TH')}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {headerComputed.list.length > 20 && (
+                      <div className="px-3 py-2 text-xs text-gray-600 bg-gray-50 text-center">แสดง 20 รายการจากทั้งหมด {headerComputed.list.length.toLocaleString('th-TH')} รายการ</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <span className="hidden sm:inline text-gray-700 px-3 py-1.5 rounded-full border bg-white/80 backdrop-blur-sm shadow-sm">อัปเดตล่าสุด: {headerComputed.last ? headerComputed.last.toLocaleString('th-TH') : '-'}</span>
+            </div>
+          ))()}
         </div>
+        {/* Snapshot banner removed per request */}
       </header>
 
-      {/* View Navigation */}
-      <div className="bg-gray-100 rounded-lg p-1">
-        <nav className="flex space-x-1" role="tablist">
-          {views.map((view) => {
-            const Icon = view.icon;
-            const isActive = activeView === view.id;
-
-            return (
-              <button
-                key={view.id}
-                onClick={() => setActiveView(view.id)}
-                className={`
-                  flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium text-sm
-                  transition-all duration-200 ease-in-out flex-1
-                  ${isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-blue-700'}
-                `}
-                role="tab"
-                aria-selected={isActive}
-                title={view.description}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="hidden sm:inline">{view.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+      {/* Navigation removed for compact layout */}
 
       {/* Main Content */}
-      <main role="tabpanel" aria-labelledby={`tab-${activeView}`}>
+      <main role="tabpanel" aria-labelledby={`tab-${activeView}`} className="max-w-7xl mx-auto w-full mt-3">
         {renderContent()}
       </main>
 
       {/* Footer Info */}
-      <footer className="text-center text-xs text-gray-500 pt-4">
+      <footer className="text-center text-xs text-gray-500 pt-4 max-w-7xl mx-auto w-full">
         <p className="flex items-center justify-center gap-2">
           <Clock className="h-4 w-4" />
           <span>อัปเดตล่าสุดเมื่อ {new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</span>

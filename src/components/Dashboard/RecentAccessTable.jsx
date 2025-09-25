@@ -4,6 +4,27 @@ import { ArrowUp, ArrowDown, Filter, X, Clock, User, MapPin, CheckCircle, XCircl
 const RecentAccessTable = ({ data = [], onRowClick, onSortChange, currentSortColumn, currentSortOrder }) => {
   const [statusFilter, setStatusFilter] = useState('all');
 
+  const normalize = (v) => (typeof v === 'string' ? v.trim() : v);
+  const isEmptyish = (v) => {
+    const val = normalize(v);
+    if (val === undefined || val === null) return true;
+    if (val === '') return true;
+    const lowered = String(val).toLowerCase();
+    return [
+      'ไม่ระบุ',
+      'ไม่ระบุเวลา',
+      'ไม่ระบุชื่อ',
+      'ไม่ระบุสถานที่',
+      'n/a',
+      'na',
+      '-',
+      '—',
+      'unspecified',
+      'not specified'
+    ].includes(lowered);
+  };
+  const clean = (v) => (isEmptyish(v) ? '' : v);
+
   // Filter and process data
   const filteredData = useMemo(() => {
     const validData = data.filter(item => item !== null && item !== undefined);
@@ -196,7 +217,7 @@ const RecentAccessTable = ({ data = [], onRowClick, onSortChange, currentSortCol
                     onClick={() => onRowClick?.(item)}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.dateTime ? (
+                      {clean(item.dateTime) ? (
                         <div className="flex flex-col">
                           <span>{new Date(item.dateTime).toLocaleDateString('th-TH')}</span>
                           <span className="text-xs text-gray-500">
@@ -204,14 +225,14 @@ const RecentAccessTable = ({ data = [], onRowClick, onSortChange, currentSortCol
                           </span>
                         </div>
                       ) : (
-                        <span className="text-gray-400 italic">ไม่ระบุเวลา</span>
+                        <span className="text-gray-400 italic"></span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.cardName || <span className="text-gray-400 italic">ไม่ระบุชื่อ</span>}
+                      {clean(item.cardName)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.location || <span className="text-gray-400 italic">ไม่ระบุสถานที่</span>}
+                      {clean(item.location)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full border ${statusBadge.className}`}>

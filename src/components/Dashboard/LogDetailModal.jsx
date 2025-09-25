@@ -14,7 +14,7 @@ const LogDetailModal = ({ logEntry, onClose }) => {
       return value ? 'ใช่' : 'ไม่ใช่';
     }
     if (value === null || value === undefined || value === '') {
-      return <span className="italic text-gray-400">ไม่ระบุ</span>;
+      return '';
     }
     return value.toString();
   };

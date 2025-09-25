@@ -32,6 +32,11 @@ const getSeverityLevel = (reason) => {
 };
 
 const DeniedReasonsChart = ({ data = [], loading = false }) => {
+  const isEmptyish = (v) => {
+    if (v === undefined || v === null) return true;
+    const s = String(v).trim().toLowerCase();
+    return s === '' || ['ไม่ระบุ', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+  };
   const [viewMode, setViewMode] = useState('pie'); // 'pie' หรือ 'bar'
 
   // ปรับปรุงการประมวลผลข้อมูลให้กระชับขึ้น
@@ -39,8 +44,9 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
     const reasonCounts = {};
 
     data.forEach(item => {
-      if (item.status === 'denied' && item.reason && item.reason !== 'N/A') {
-        reasonCounts[item.reason] = (reasonCounts[item.reason] || 0) + 1;
+      if (item.status === 'denied' && !isEmptyish(item.reason)) {
+        const r = String(item.reason).trim();
+        reasonCounts[r] = (reasonCounts[r] || 0) + 1;
       }
     });
 
@@ -81,7 +87,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
   // Loading state
   if (loading) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-sm border">
+    <div className="bg-white p-4 rounded-lg shadow-sm border">
         <div className="animate-pulse">
           <div className="h-4 bg-gray-200 rounded w-1/3 mb-4"></div>
           <div className="h-64 bg-gray-100 rounded"></div>
@@ -93,7 +99,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       {/* Header ที่เรียบง่าย */}
-      <div className="p-6 border-b border-gray-100">
+      <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">เหตุผลการปฏิเสธ</h3>
@@ -127,7 +133,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
       </div>
 
       {/* Chart Content */}
-      <div className="p-6">
+      <div className="p-4">
         {processedData.length === 0 ? (
           <div className="h-64 flex items-center justify-center">
             <div className="text-center">
@@ -140,7 +146,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
             </div>
           </div>
         ) : (
-          <div className="h-80">
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               {viewMode === 'pie' ? (
                 <PieChart>

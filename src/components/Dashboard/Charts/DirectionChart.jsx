@@ -7,17 +7,22 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
 
   // Enhanced data processing
   const chartData = useMemo(() => {
+    const isEmptyish = (v) => {
+      if (v === undefined || v === null) return true;
+      const s = String(v).trim().toLowerCase();
+      return s === '' || ['ไม่ระบุ', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+    };
     if (!Array.isArray(data) || data.length === 0) return [];
 
     return data.map((item, index) => ({
       ...item,
       name: item.direction === 'IN' ? 'เข้า' :
         item.direction === 'OUT' ? 'ออก' :
-          item.directionThai || item.direction || 'ไม่ระบุ',
+          (isEmptyish(item.directionThai || item.direction) ? '' : (item.directionThai || item.direction)),
       value: parseInt(item.count) || parseInt(item.value) || 0,
       originalDirection: item.direction,
       id: `direction-${index}`
-    })).filter(item => item.value > 0)
+    })).filter(item => item.value > 0 && !isEmptyish(item.name))
       .sort((a, b) => b.value - a.value);
   }, [data]);
 
@@ -36,7 +41,7 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
       }).map(item => ({
         ...item,
         total: item.IN + item.OUT,
-        ratio: item.OUT > 0 ? (item.IN / item.OUT).toFixed(2) : 'N/A'
+        ratio: item.OUT > 0 ? (item.IN / item.OUT).toFixed(2) : '0.00'
       }));
     }
     return timeSeriesData;

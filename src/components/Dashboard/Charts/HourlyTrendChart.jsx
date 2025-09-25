@@ -228,7 +228,7 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
             {chartData.reduce((max, item) =>
               (parseInt(item.count) || 0) > (parseInt(max.count) || 0) ? item : max,
               chartData[0] || {}
-            )?.hour || 'N/A'} น.
+            )?.hour || ''} น.
           </span>
         </p>
       </div>

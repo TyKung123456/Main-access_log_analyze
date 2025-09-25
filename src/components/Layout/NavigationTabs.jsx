@@ -1,6 +1,6 @@
 // components/Layout/NavigationTabs.jsx
 import React from 'react';
-import { Upload, BarChart3, MessageSquare, Table, FileText, Grid } from 'lucide-react';
+import { Upload, BarChart3, MessageSquare, Table, FileText, Grid, Activity } from 'lucide-react';
 
 const NavigationTabs = ({ activeTab, setActiveTab }) => {
   const tabs = [

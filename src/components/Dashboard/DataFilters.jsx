@@ -16,6 +16,13 @@ import {
 } from 'lucide-react';
 import apiService from '../../services/apiService'; // Import apiService
 
+// Saved Views helpers (localStorage)
+const VIEWS_KEY = 'ala_saved_views_dashboard';
+const loadViewsMap = () => {
+  try { return JSON.parse(localStorage.getItem(VIEWS_KEY) || '{}'); } catch { return {}; }
+};
+const saveViewsMap = (m) => { try { localStorage.setItem(VIEWS_KEY, JSON.stringify(m)); } catch {} };
+
 const LogViewerDashboard = () => {
   // State management
   const [allLogs, setAllLogs] = useState([]);
@@ -39,6 +46,8 @@ const LogViewerDashboard = () => {
     doors: [],
     severities: []
   });
+  const [viewName, setViewName] = useState('');
+  const [viewOptions, setViewOptions] = useState([]);
 
   // Fallback data for when API fails
   const fallbackData = {
@@ -152,6 +161,48 @@ const LogViewerDashboard = () => {
       setAvailableDoors(fallbackData.doors);
       setAvailableSeverities(fallbackData.severityLevels);
     }
+  }, []);
+
+  // Saved Views operations
+  const refreshViews = useCallback(() => setViewOptions(Object.keys(loadViewsMap())), []);
+  useEffect(()=>{ refreshViews(); }, [refreshViews]);
+  const handleSaveView = () => {
+    if (!viewName.trim()) return;
+    const map = loadViewsMap();
+    map[viewName.trim()] = filters;
+    saveViewsMap(map);
+    refreshViews();
+  };
+  const handleLoadView = (name) => {
+    const map = loadViewsMap();
+    if (map[name]) setFilters(map[name]);
+  };
+  const handleDeleteView = (name) => {
+    const map = loadViewsMap();
+    if (map[name]) { delete map[name]; saveViewsMap(map); refreshViews(); }
+  };
+  const handleShareView = (name) => {
+    const map = loadViewsMap();
+    const data = map[name] || filters;
+    try {
+      const fv = btoa(encodeURIComponent(JSON.stringify(data)));
+      const url = new URL(window.location.href);
+      url.searchParams.set('fv', fv);
+      navigator.clipboard.writeText(url.toString());
+      alert('คัดลอกลิงก์ Saved View แล้ว');
+    } catch { alert('ไม่สามารถคัดลอกลิงก์ได้'); }
+  };
+
+  // Initialize from shared URL (fv)
+  useEffect(()=>{
+    try {
+      const url = new URL(window.location.href);
+      const fv = url.searchParams.get('fv');
+      if (fv) {
+        const obj = JSON.parse(decodeURIComponent(atob(fv)));
+        if (obj && typeof obj === 'object') setFilters(prev=>({ ...prev, ...obj }));
+      }
+    } catch {}
   }, []);
 
   // Handle filter changes
@@ -437,7 +488,7 @@ const LogViewerDashboard = () => {
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
@@ -468,7 +519,26 @@ const LogViewerDashboard = () => {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+        {/* Saved Views Bar */}
+        <div className="mb-4 p-2 bg-white/70 border rounded-lg flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <input value={viewName} onChange={e=>setViewName(e.target.value)} className="px-2 py-1 rounded border text-sm" placeholder="ตั้งชื่อ Saved View" />
+            <button onClick={handleSaveView} className="px-3 py-1.5 rounded bg-sky-600 text-white text-sm hover:bg-sky-700">บันทึก</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <select onChange={e=>handleLoadView(e.target.value)} className="px-2 py-1 rounded border text-sm" defaultValue="">
+              <option value="" disabled>โหลด Saved View</option>
+              {viewOptions.map(n => (<option key={n} value={n}>{n}</option>))}
+            </select>
+            {viewOptions.length>0 && (
+              <>
+                <button onClick={()=>{ const n=prompt('ลบ Saved View ชื่อ?'); if(n) handleDeleteView(n); }} className="px-3 py-1.5 rounded border text-sm">ลบ</button>
+                <button onClick={()=>{ const n=prompt('แชร์ Saved View ชื่อ?'); if(n) handleShareView(n); }} className="px-3 py-1.5 rounded border text-sm">แชร์ลิงก์</button>
+              </>
+            )}
+          </div>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Filters Sidebar */}
           <div className="lg:col-span-1">

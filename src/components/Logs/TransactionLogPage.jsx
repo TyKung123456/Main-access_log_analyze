@@ -43,6 +43,29 @@ function toDateRange(preset) {
 }
 
 const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
+  const normalize = (v) => (typeof v === 'string' ? v.trim() : v);
+  const isEmptyish = (v) => {
+    const val = normalize(v);
+    if (val === undefined || val === null) return true;
+    if (val === '') return true;
+    const lowered = String(val).toLowerCase();
+    // Treat common placeholders as empty
+    return [
+      'ไม่ระบุ',
+      'ไม่ระบุเวลา',
+      'ไม่ระบุชื่อ',
+      'ไม่ระบุสถานที่',
+      'n/a',
+      'na',
+      'none',
+      '-',
+      '—',
+      'unspecified',
+      'not specified'
+    ].includes(lowered);
+  };
+  const clean = (v) => (isEmptyish(v) ? '' : v);
+
   const [search, setSearch] = useState('');
   const [action, setAction] = useState('all');
   const [datePreset, setDatePreset] = useState('all');
@@ -270,20 +293,20 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                             {isOpen ? <ChevronUp className="w-4 h-4 text-gray-600"/> : <ChevronDown className="w-4 h-4 text-gray-600"/>}
                           </button>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap cursor-pointer" onClick={()=>onRowClick?.(r)}>{r['Date Time'] || r.dateTime}</td>
+                        <td className="px-4 py-3 whitespace-nowrap cursor-pointer" onClick={()=>onRowClick?.(r)}>{clean(r['Date Time'] || r.dateTime)}</td>
                         <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-gray-400"/>
-                            {r['Card Name'] || r.cardName || 'ไม่ระบุ'}
+                            {clean(r['Card Name'] || r.cardName)}
                           </div>
                         </td>
                         <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>
                           <div className="flex items-center gap-2">
                             <Globe className="w-4 h-4 text-gray-400"/>
-                            {r['Door'] || r.door || '-'}
+                            {clean(r['Door'] || r.door)}
                           </div>
                         </td>
-                        <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>{r['Reason'] || r.reason || '-'}</td>
+                        <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>{clean(r['Reason'] || r.reason)}</td>
                         <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>
                           {(r.allow === true || r.Allow === true || r.Allow === 't') ? (
                             <span className="inline-flex items-center gap-1 text-green-600"><Check className="w-4 h-4"/> อนุญาต</span>
@@ -298,33 +321,41 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                         <tr className="bg-gray-50/70">
                           <td></td>
                           <td colSpan={5} className="px-4 py-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-700">
-                              <div>
-                                <div className="text-gray-500">ชื่อบัตร</div>
-                                <div className="font-medium">{r['Card Name'] || r.cardName || '-'}</div>
-                              </div>
-                              <div>
-                                <div className="text-gray-500">ประเภทผู้ใช้</div>
-                                <div className="font-medium">{r['User Type'] || r.userType || '-'}</div>
-                              </div>
-                              <div>
-                                <div className="text-gray-500">สถานที่</div>
-                                <div className="font-medium">{r['Location'] || r.location || '-'}</div>
-                              </div>
-                              <div>
-                                <div className="text-gray-500">ประตู</div>
-                                <div className="font-medium">{r['Door'] || r.door || '-'}</div>
-                              </div>
-                              <div>
-                                <div className="text-gray-500">ทิศทาง</div>
-                                <div className="font-medium">{r['Direction'] || r.direction || '-'}</div>
-                              </div>
-                              <div>
-                                <div className="text-gray-500">เหตุผล</div>
-                                <div className="font-medium">{r['Reason'] || r.reason || '-'}</div>
-                              </div>
-                            </div>
-                            <div className="mt-2 text-[11px] text-gray-500">Transaction ID: {r['Transaction ID'] || r.id || '-'}</div>
+                            {(() => {
+                              const details = [
+                                { label: 'ชื่อบัตร', value: r['Card Name'] || r.cardName },
+                                { label: 'ประเภทผู้ใช้', value: r['User Type'] || r.userType },
+                                { label: 'สถานที่', value: r['Location'] || r.location },
+                                { label: 'ประตู', value: r['Door'] || r.door },
+                                { label: 'ทิศทาง', value: r['Direction'] || r.direction },
+                                { label: 'เหตุผล', value: r['Reason'] || r.reason },
+                                // Additional fields that may appear in data
+                                { label: 'อุปกรณ์', value: r['Device'] || r.device },
+                                { label: 'ช่องทาง', value: r['Channel'] || r.channel },
+                                { label: 'สิทธิ์', value: r['Permission'] || r.permission },
+                                { label: 'อุณหภูมิ', value: r['Temp.'] || r.temperature || r.temp },
+                                { label: 'ผู้ใช้ (Hash)', value: r['User Hash'] || r.userHash },
+                                { label: 'หมายเลขบัตร (Hash)', value: r['Card Number Hash'] || r.cardNumberHash },
+                              ].filter(d => !isEmptyish(d.value));
+
+                              return (
+                                <>
+                                  {details.length > 0 && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-700">
+                                      {details.map((d, i) => (
+                                        <div key={i}>
+                                          <div className="text-gray-500">{d.label}</div>
+                                          <div className="font-medium">{clean(d.value)}</div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {!isEmptyish(r['Transaction ID'] || r.id) && (
+                                    <div className="mt-2 text-[11px] text-gray-500">Transaction ID: {clean(r['Transaction ID'] || r.id)}</div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </td>
                         </tr>
                       )}

@@ -12,36 +12,52 @@ router.get('/anomalies', async (req, res) => {
   try {
     console.log('🔍 กำลังวิเคราะห์ความผิดปกติ...');
 
-    const anomalies = await Promise.all([
-      detectMultipleFailedAttempts(),
-      detectUnusualTimeAccess(),
-      detectTailgating(),
-      detectSuspiciousCardUsage(),
-      detectLocationAnomalies(),
-      detectFrequencyAnomalies(),
-      detectUnauthorizedAccess(),
-      detectDormantCardActivity()
-    ]);
+    // Run detectors defensively; do not fail the whole request
+    const detectors = [
+      { key: 'multipleFailedAttempts', fn: detectMultipleFailedAttempts },
+      { key: 'unusualTimeAccess', fn: detectUnusualTimeAccess },
+      { key: 'tailgating', fn: detectTailgating },
+      { key: 'suspiciousCardUsage', fn: detectSuspiciousCardUsage },
+      { key: 'locationAnomalies', fn: detectLocationAnomalies },
+      { key: 'frequencyAnomalies', fn: detectFrequencyAnomalies },
+      { key: 'unauthorizedAccess', fn: detectUnauthorizedAccess },
+      { key: 'dormantCardActivity', fn: detectDormantCardActivity },
+    ];
 
-    const result = {
-      summary: {
-        totalAnomalies: anomalies.reduce((sum, cat) => sum + cat.data.length, 0),
-        highRisk: anomalies.reduce((sum, cat) => sum + cat.data.filter(item => item.riskLevel === 'high').length, 0),
-        mediumRisk: anomalies.reduce((sum, cat) => sum + cat.data.filter(item => item.riskLevel === 'medium').length, 0),
-        lowRisk: anomalies.reduce((sum, cat) => sum + cat.data.filter(item => item.riskLevel === 'low').length, 0)
-      },
-      categories: anomalies.reduce((obj, cat) => {
-        obj[cat.type] = cat;
-        return obj;
-      }, {}),
-      analysisTime: new Date().toISOString()
+    const settled = await Promise.allSettled(detectors.map(d => d.fn()));
+
+    const categoriesArr = settled.map((r, i) => {
+      const key = detectors[i].key;
+      if (r.status === 'fulfilled' && r.value && Array.isArray(r.value.data)) {
+        return r.value;
+      }
+      console.warn(`⚠️ Detector '${key}' failed:`, r.reason?.message || r.reason);
+      return {
+        type: key,
+        title: key,
+        description: 'Detector failed or unavailable',
+        data: [],
+        error: true,
+      };
+    });
+
+    const summary = {
+      totalAnomalies: categoriesArr.reduce((sum, cat) => sum + (cat.data?.length || 0), 0),
+      highRisk: categoriesArr.reduce((sum, cat) => sum + ((cat.data || []).filter(item => (item.riskLevel || '').toLowerCase() === 'high').length), 0),
+      mediumRisk: categoriesArr.reduce((sum, cat) => sum + ((cat.data || []).filter(item => (item.riskLevel || '').toLowerCase() === 'medium').length), 0),
+      lowRisk: categoriesArr.reduce((sum, cat) => sum + ((cat.data || []).filter(item => (item.riskLevel || '').toLowerCase() === 'low').length), 0),
     };
 
-    res.json(result);
+    const categories = categoriesArr.reduce((obj, cat) => {
+      obj[cat.type] = cat;
+      return obj;
+    }, {});
 
+    res.json({ summary, categories, analysisTime: new Date().toISOString() });
   } catch (error) {
-    console.error('❌ Security analysis error:', error);
-    res.status(500).json({ error: 'Failed to analyze security anomalies' });
+    console.error('❌ Security analysis error (outer):', error);
+    // Return safe empty payload to avoid breaking the UI
+    res.json({ summary: { totalAnomalies: 0, highRisk: 0, mediumRisk: 0, lowRisk: 0 }, categories: {}, analysisTime: new Date().toISOString() });
   }
 });
 
@@ -284,6 +300,65 @@ const CASE_SQL = {
   ORDER BY day`
 };
 
+// --- Security Room specific cases ---
+CASE_SQL.security_room_events = `
+  SELECT
+    "Date Time"       AS ts,
+    "Location"       AS location,
+    "Direction"      AS direction,
+    "Allow"          AS allow,
+    "Reason"         AS reason,
+    "Card Name"      AS card_name,
+    "User Type"      AS user_type,
+    "Door"           AS door,
+    "Device"         AS device,
+    "Permission"     AS permission,
+    "Channel"        AS channel,
+    "Transaction ID" AS txid
+  FROM public."real_log_analyze"
+  WHERE (
+      LOWER(COALESCE("Location", '')) LIKE '%security%'
+      OR "Location" ILIKE '%ห้องความปลอดภัย%'
+      OR "Location" ILIKE '%ห้องควบคุมความปลอดภัย%'
+      OR "Location" ILIKE '%ศูนย์รักษาความปลอดภัย%'
+    )
+  ORDER BY CAST("Date Time" AS TIMESTAMP) DESC
+  LIMIT 500`;
+
+CASE_SQL.security_room_offhours = `
+  SELECT
+    "Date Time"       AS ts,
+    "Location"       AS location,
+    "Direction"      AS direction,
+    "Allow"          AS allow,
+    "Reason"         AS reason,
+    "Card Name"      AS card_name,
+    "User Type"      AS user_type,
+    "Door"           AS door,
+    "Device"         AS device,
+    "Permission"     AS permission,
+    "Channel"        AS channel,
+    "Transaction ID" AS txid,
+    EXTRACT(HOUR FROM CAST("Date Time" AS TIMESTAMP)) AS hour,
+    EXTRACT(DOW FROM CAST("Date Time" AS TIMESTAMP))  AS dow
+  FROM public."real_log_analyze"
+  WHERE (
+      LOWER(COALESCE("Location", '')) LIKE '%security%'
+      OR "Location" ILIKE '%ห้องความปลอดภัย%'
+      OR "Location" ILIKE '%ห้องควบคุมความปลอดภัย%'
+      OR "Location" ILIKE '%ศูนย์รักษาความปลอดภัย%'
+    )
+    AND "Direction" = 'IN'
+    AND "Allow" = TRUE
+    AND (
+      EXTRACT(HOUR FROM CAST("Date Time" AS TIMESTAMP)) >= 22
+      OR EXTRACT(HOUR FROM CAST("Date Time" AS TIMESTAMP)) <= 6
+      OR EXTRACT(DOW  FROM CAST("Date Time" AS TIMESTAMP)) IN (0,6)
+    )
+    AND LOWER(COALESCE("User Type", '')) <> 'security'
+  ORDER BY CAST("Date Time" AS TIMESTAMP) DESC
+  LIMIT 500`;
+
 // List cases
 router.get('/cases/list', async (req, res) => {
   const list = [
@@ -304,6 +379,9 @@ router.get('/cases/list', async (req, res) => {
     { id: 'top_failed_doors', title: 'ประตูที่เกิดความผิดพลาดมากที่สุด', category: 'Summary' },
     { id: 'top_locations_events', title: 'สถานที่ที่มีเหตุการณ์มากที่สุด', category: 'Summary' },
     { id: 'daily_inout', title: 'จำนวนเข้า–ออก รายวัน', category: 'Summary' },
+    // New: Security Room related
+    { id: 'security_room_events', title: 'เหตุการณ์ในห้อง Security', category: 'Security Room' },
+    { id: 'security_room_offhours', title: 'ห้อง Security: เข้านอกเวลาทำการ', category: 'Security Room' },
   ];
   res.json({ cases: list });
 });
@@ -313,8 +391,78 @@ router.get('/cases', async (req, res) => {
   try {
     const id = req.query.id;
     if (!id || !CASE_SQL[id]) return res.status(400).json({ error: 'Unknown case id' });
-    const result = await query(CASE_SQL[id]);
-    res.json({ id, rows: result.rows, count: result.rowCount });
+
+    // Local mock dataset for selected cases
+    const CASE_MOCK = {
+      security_room_events: [
+        {
+          ts: '2024-09-02T09:05:00.000Z', location: 'ห้องควบคุมความปลอดภัย A', direction: 'IN', allow: true, reason: '',
+          card_name: 'ดาบตำรวจ วิรัช', user_type: 'SECURITY', door: 'SEC-A-01', device: 'Reader-SecA-01', permission: 'SEC_ROOM_A', channel: 'CARD', txid: 'TX-SEC-000001'
+        },
+        {
+          ts: '2024-09-02T23:45:12.000Z', location: 'ห้องควบคุมความปลอดภัย A', direction: 'IN', allow: true, reason: '',
+          card_name: 'สิบตำรวจตรี ก้องภพ', user_type: 'SECURITY', door: 'SEC-A-01', device: 'Reader-SecA-02', permission: 'SEC_ROOM_A', channel: 'CARD', txid: 'TX-SEC-000003'
+        },
+        {
+          ts: '2024-09-03T01:12:09.000Z', location: 'ห้องควบคุมความปลอดภัย A', direction: 'IN', allow: false, reason: 'UNAUTHORIZED AREA',
+          card_name: 'สุทธิชัย ผู้เยี่ยม', user_type: 'VISITOR', door: 'SEC-A-01', device: 'Reader-SecA-01', permission: 'VIS_TEMP', channel: 'CARD', txid: 'TX-SEC-000005'
+        },
+        {
+          ts: '2024-09-03T10:02:33.000Z', location: 'ห้องควบคุมความปลอดภัย B', direction: 'IN', allow: true, reason: '',
+          card_name: 'ร.ต.อ. ชาญชัย', user_type: 'SECURITY', door: 'SEC-B-02', device: 'Reader-SecB-01', permission: 'SEC_ROOM_B', channel: 'CARD', txid: 'TX-SEC-000007'
+        },
+        {
+          ts: '2024-09-03T22:10:01.000Z', location: 'ห้องควบคุมความปลอดภัย B', direction: 'IN', allow: false, reason: 'NO OFF-HOUR PERMISSION',
+          card_name: 'สมปอง ใจดี', user_type: 'EMPLOYEE', door: 'SEC-B-02', device: 'Reader-SecB-02', permission: 'EMP_GENERAL', channel: 'CARD', txid: 'TX-SEC-000009'
+        }
+      ],
+      security_room_offhours: [
+        {
+          ts: '2024-09-02T23:45:12.000Z', location: 'ห้องควบคุมความปลอดภัย A', direction: 'IN', allow: true, reason: '',
+          card_name: 'สิบตำรวจตรี ก้องภพ', user_type: 'SECURITY', hour: 23, dow: 1, door: 'SEC-A-01', device: 'Reader-SecA-02', permission: 'SEC_ROOM_A', channel: 'CARD', txid: 'TX-SEC-000003'
+        },
+        {
+          ts: '2024-09-03T22:10:01.000Z', location: 'ห้องควบคุมความปลอดภัย B', direction: 'IN', allow: false, reason: 'NO OFF-HOUR PERMISSION',
+          card_name: 'สมปอง ใจดี', user_type: 'EMPLOYEE', hour: 22, dow: 2, door: 'SEC-B-02', device: 'Reader-SecB-02', permission: 'EMP_GENERAL', channel: 'CARD', txid: 'TX-SEC-000009'
+        },
+        {
+          ts: '2024-09-03T23:20:00.000Z', location: 'ห้องควบคุมความปลอดภัย B', direction: 'IN', allow: true, reason: '',
+          card_name: 'พนักงานเวรดึก', user_type: 'EMPLOYEE', hour: 23, dow: 2, door: 'SEC-B-02', device: 'Reader-SecB-02', permission: 'EMP_SPECIAL', channel: 'CARD', txid: 'TX-SEC-000013'
+        },
+        {
+          ts: '2024-09-04T23:59:59.000Z', location: 'ห้องควบคุมความปลอดภัย C', direction: 'IN', allow: false, reason: 'INVALID PIN',
+          card_name: 'Visitor 99', user_type: 'VISITOR', hour: 23, dow: 3, door: 'SEC-C-03', device: 'Reader-SecC-02', permission: 'VIS_TEMP', channel: 'PIN', txid: 'TX-SEC-000012'
+        }
+      ],
+      denied_without_reason: [
+        { 'Date Time': '2024-09-05 20:15:10', Location: 'อาคาร B ชั้น 1', Direction: 'IN', Allow: false, Reason: '', 'Card Name': 'ผู้มาติดต่อ 01', 'User Type': 'VISITOR', Door: 'B1-01', Device: 'Reader-07', Permission: 'VIS_TEMP', Channel: 'CARD', 'Transaction ID': 'TX-MOCK-0001' },
+        { 'Date Time': '2024-09-05 20:16:45', Location: 'อาคาร B ชั้น 1', Direction: 'IN', Allow: false, Reason: null, 'Card Name': 'ผู้มาติดต่อ 02', 'User Type': 'VISITOR', Door: 'B1-01', Device: 'Reader-07', Permission: 'VIS_TEMP', Channel: 'CARD', 'Transaction ID': 'TX-MOCK-0002' }
+      ]
+    };
+
+    const forceMock = (req.query.mock || '').toString() === 'true';
+
+    if (forceMock && CASE_MOCK[id]) {
+      return res.json({ id, rows: CASE_MOCK[id], count: CASE_MOCK[id].length, mock: true });
+    }
+
+    try {
+      const result = await query(CASE_SQL[id]);
+      // Optional fallback to mock only when explicitly enabled via env
+      const allowZeroFallback = (process.env.ENABLE_SECURITY_CASES_MOCK === 'true');
+      if ((result.rowCount || 0) === 0 && CASE_MOCK[id] && allowZeroFallback && !forceMock) {
+        console.warn(`Zero rows for case ${id}; serving mock due to env/DEV mode`);
+        return res.json({ id, rows: CASE_MOCK[id], count: CASE_MOCK[id].length, mock: true });
+      }
+      return res.json({ id, rows: result.rows, count: result.rowCount });
+    } catch (err) {
+      console.error('Case query error', err);
+      if (CASE_MOCK[id]) {
+        console.warn(`Serving mock data for case ${id}`);
+        return res.json({ id, rows: CASE_MOCK[id], count: CASE_MOCK[id].length, mock: true });
+      }
+      return res.status(500).json({ error: 'Failed to run case query' });
+    }
   } catch (err) {
     console.error('Case query error', err);
     res.status(500).json({ error: 'Failed to run case query' });

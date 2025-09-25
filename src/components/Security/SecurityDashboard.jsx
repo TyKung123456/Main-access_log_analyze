@@ -134,6 +134,15 @@ const CompactAnalytics = ({ alerts, onLocationClick }) => {
   // Load case list once
   useEffect(() => {
     (async () => {
+      const useClientCaseMock = import.meta.env.VITE_CASES_FROM_DATA === 'true';
+      if (useClientCaseMock) {
+        setCaseList([
+          { id: 'security_room_events', title: 'เหตุการณ์ในห้อง Security', category: 'Security Room' },
+          { id: 'security_room_offhours', title: 'ห้อง Security: เข้านอกเวลาทำการ', category: 'Security Room' },
+          { id: 'denied_without_reason', title: 'ปฏิเสธ (Allow=false) แต่ Reason ว่าง', category: 'Data Quality' }
+        ]);
+        return;
+      }
       try {
         const res = await fetch('/api/security/cases/list');
         const data = await res.json();
@@ -147,9 +156,114 @@ const CompactAnalytics = ({ alerts, onLocationClick }) => {
   const runCase = async (id) => {
     setCaseLoading(true);
     try {
-      const res = await fetch(`/api/security/cases?id=${encodeURIComponent(id)}`);
-      const data = await res.json();
-      setCaseResult({ id, rows: data.rows || [], count: data.count || 0 });
+      const useClientCaseMock = import.meta.env.VITE_CASES_FROM_DATA === 'true';
+
+      // Helper: case generation from current logData
+      const computeCaseFromData = (caseId, rows) => {
+        const isEmptyish = (v) => v === undefined || v === null || String(v).trim() === '';
+        const includesSecurityRoom = (loc) => {
+          if (!loc) return false;
+          const s = String(loc).toLowerCase();
+          return s.includes('security') || s.includes('ห้องควบคุมความปลอดภัย') || s.includes('ห้องความปลอดภัย') || s.includes('ศูนย์รักษาความปลอดภัย');
+        };
+        const toTs = (dt) => {
+          try { const d = new Date(dt); return isNaN(d) ? '' : d.toISOString(); } catch { return ''; }
+        };
+
+        switch (caseId) {
+          case 'security_room_events': {
+            const out = rows
+              .filter(r => includesSecurityRoom(r.location || r.door))
+              .map(r => ({
+                ts: toTs(r.dateTime),
+                location: r.location || r.door || '',
+                direction: r.direction || '',
+                allow: !!r.allow,
+                reason: r.reason || '',
+                card_name: r.cardName || r.cardNumber || '',
+                user_type: r.userType || '',
+                door: r.door || '',
+                device: r.device || '',
+                permission: r.permission || '',
+                channel: r.channel || '',
+                txid: r.transactionId || r.id || ''
+              }))
+              .sort((a,b) => new Date(b.ts) - new Date(a.ts));
+            return out;
+          }
+          case 'security_room_offhours': {
+            const out = rows
+              .filter(r => includesSecurityRoom(r.location || r.door))
+              .filter(r => (r.direction || '').toUpperCase() === 'IN')
+              .filter(r => !!r.allow)
+              .filter(r => (r.userType || '').toUpperCase() !== 'SECURITY')
+              .map(r => {
+                const d = new Date(r.dateTime);
+                const hour = isNaN(d) ? null : d.getHours();
+                const dow = isNaN(d) ? null : d.getDay();
+                return {
+                  ts: toTs(r.dateTime),
+                  location: r.location || r.door || '',
+                  direction: r.direction || '',
+                  allow: !!r.allow,
+                  reason: r.reason || '',
+                  card_name: r.cardName || r.cardNumber || '',
+                  user_type: r.userType || '',
+                  hour, dow,
+                  door: r.door || '',
+                  device: r.device || '',
+                  permission: r.permission || '',
+                  channel: r.channel || '',
+                  txid: r.transactionId || r.id || ''
+                };
+              })
+              .filter(r => r.hour !== null && (r.hour >= 22 || r.hour <= 6 || (r.dow === 0 || r.dow === 6)))
+              .sort((a,b) => new Date(b.ts) - new Date(a.ts));
+            return out;
+          }
+          case 'denied_without_reason': {
+            const out = rows
+              .filter(r => !r.allow)
+              .filter(r => isEmptyish(r.reason))
+              .map(r => ({
+                ts: toTs(r.dateTime),
+                location: r.location || r.door || '',
+                direction: r.direction || '',
+                allow: !!r.allow,
+                reason: r.reason || '',
+                card_name: r.cardName || r.cardNumber || '',
+                user_type: r.userType || '',
+                txid: r.transactionId || r.id || ''
+              }))
+              .sort((a,b) => new Date(b.ts) - new Date(a.ts));
+            return out;
+          }
+          default:
+            return [];
+        }
+      };
+
+      if (useClientCaseMock) {
+        const rows = computeCaseFromData(id, logData || []);
+        setCaseResult({ id, rows, count: rows.length });
+      } else {
+        const forceCasesMock = import.meta.env.VITE_FORCE_CASES_MOCK === 'true';
+        const baseUrl = `/api/security/cases?id=${encodeURIComponent(id)}`;
+        const url = `${baseUrl}${forceCasesMock ? '&mock=true' : ''}`;
+        let res = await fetch(url);
+        let data = await res.json();
+        // Auto-retry with mock=true if 0 rows returned and we didn't force mock
+        if (!forceCasesMock && (data.count || 0) === 0) {
+          try {
+            const resMock = await fetch(`${baseUrl}&mock=true`);
+            const dataMock = await resMock.json();
+            if ((dataMock.count || 0) > 0) {
+              data = dataMock;
+            }
+          } catch (_) { /* ignore */ }
+        }
+        setCaseResult({ id, rows: data.rows || [], count: data.count || 0 });
+      }
     } catch (e) {
       setCaseResult({ id, rows: [], count: 0 });
     } finally {
@@ -622,11 +736,11 @@ const SecurityDashboard = ({ logData = [] }) => {
         id: alertId++,
         alertType: 'ACCESS_DENIED',
         severity: log.reason && log.reason.includes('INVALID') ? 'high' : 'medium',
-        cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
-        location: log.location || log.door || 'ไม่ระบุ',
+        cardName: log.cardName || log.cardNumber,
+        location: log.location || log.door,
         accessTime: log.dateTime,
         reason: log.reason || 'การเข้าถึงถูกปฏิเสธ',
-        userType: log.userType || 'ไม่ระบุ'
+        userType: log.userType
       });
     });
 
@@ -645,11 +759,11 @@ const SecurityDashboard = ({ logData = [] }) => {
                 id: alertId++,
                 alertType: 'UNUSUAL_TIME',
                 severity: (hour >= 23 || hour <= 5) ? 'high' : 'medium',
-                cardName: log.cardName || log.cardNumber || 'ไม่ระบุ',
-                location: log.location || log.door || 'ไม่ระบุ',
+                cardName: log.cardName || log.cardNumber,
+                location: log.location || log.door,
                 accessTime: log.dateTime,
                 reason: `เข้าถึงนอกเวลา (${hour.toString().padStart(2, '0')}:00)`,
-                userType: log.userType || 'ไม่ระบุ'
+                userType: log.userType
               });
             }
           }
@@ -834,7 +948,7 @@ const SecurityDashboard = ({ logData = [] }) => {
   if (loading) {
     return (
       <div className="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen p-4">
-        <div className="max-w-7xl mx-auto">
+        <div className="w-full">
           <div className="animate-pulse">
             <div className="h-20 bg-white rounded-xl mb-6 shadow-sm"></div>
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
@@ -934,7 +1048,7 @@ const SecurityDashboard = ({ logData = [] }) => {
                 <span className="text-base font-medium">ระบบออนไลน์</span>
               </div>
               <div className="text-slate-400">•</div>
-              <span className="text-base">อัปเดตล่าสุด: {lastUpdated || 'ไม่ระบุ'}</span>
+              <span className="text-base">อัปเดตล่าสุด: {lastUpdated || ''}</span>
               <div className="text-slate-400">•</div>
               <span className="text-base">Security Dashboard v2.0</span>
             </div>

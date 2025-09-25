@@ -21,15 +21,25 @@ export const useSecurityAnalysis = (logData = []) => {
             const unusualTimeAccess = [];
             // ... (and so on for multipleFailures, locationAnomalies)
 
+            const isEmptyish = (v) => {
+                if (v === undefined || v === null) return true;
+                const s = String(v).trim().toLowerCase();
+                return s === '' || ['ไม่ระบุ', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+            };
             recentLogs.forEach(log => {
                 if (log.allow === false || log.allow === 0 || log.reason) {
-                    accessDenied.push({
-                        cardName: log.cardName || 'ไม่ระบุ',
-                        location: log.location || log.door || 'ไม่ระบุ',
-                        description: `การเข้าถึงถูกปฏิเสธ: ${log.reason || 'ไม่มีเหตุผล'}`,
-                        accessTime: log.dateTime,
-                        riskLevel: log.reason ? 'medium' : 'low'
-                    });
+                    const cn = isEmptyish(log.cardName) ? '' : log.cardName;
+                    const loc = isEmptyish(log.location || log.door) ? '' : (log.location || log.door);
+                    const rs = isEmptyish(log.reason) ? '' : log.reason;
+                    if (!isEmptyish(cn) || !isEmptyish(loc) || !isEmptyish(rs)) {
+                        accessDenied.push({
+                            cardName: cn,
+                            location: loc,
+                            description: rs ? `การเข้าถึงถูกปฏิเสธ: ${rs}` : 'การเข้าถึงถูกปฏิเสธ',
+                            accessTime: log.dateTime,
+                            riskLevel: rs ? 'medium' : 'low'
+                        });
+                    }
                 }
             });
 

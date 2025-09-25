@@ -13,18 +13,23 @@ const LocationDistributionChart = ({ data = [], loading = false, initialLocation
 
   // เตรียมข้อมูลสำหรับกราฟและ dropdown - แสดงทั้งหมด
   const processedData = useMemo(() => {
+    const isEmptyish = (v) => {
+      if (v === undefined || v === null) return true;
+      const s = String(v).trim().toLowerCase();
+      return s === '' || ['ไม่ระบุ', 'ไม่ระบุสถานที่', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+    };
     if (!Array.isArray(data) || data.length === 0) return [];
 
     return data.map(item => ({
       ...item,
-      locationShort: item.location && item.location.length > 15 ?
+      locationShort: !isEmptyish(item.location) && item.location.length > 15 ?
         item.location.substring(0, 15) + '...' :
-        item.location || 'ไม่ระบุสถานที่',
-      locationDisplay: item.location || 'ไม่ระบุสถานที่',
+        (isEmptyish(item.location) ? '' : item.location),
+      locationDisplay: isEmptyish(item.location) ? '' : item.location,
       count: parseInt(item.count) || 0,
       success: parseInt(item.success) || parseInt(item.successfulAccess) || 0,
       denied: parseInt(item.denied) || parseInt(item.deniedAccess) || 0
-    }));
+    })).filter(item => !isEmptyish(item.locationDisplay));
   }, [data]);
 
   // ข้อมูลที่จะแสดงในกราห์ตาม filter

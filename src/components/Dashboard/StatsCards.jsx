@@ -3,31 +3,26 @@ import React from 'react';
 import { DoorOpen, TrendingUp, AlertCircle, Users } from 'lucide-react';
 
 const StatsCards = ({ stats }) => {
+  const total = stats.totalAccess ?? stats.total_records ?? 0;
+  const success = stats.successfulAccess ?? stats.success_count ?? 0;
+  const denied = stats.deniedAccess ?? stats.denied_count ?? 0;
+  const uniqueUsers = stats.uniqueUsers;
+  const uniqueCards = stats.unique_cards;
+  const uniqueLocations = stats.unique_locations;
+  const uniqueTitle = uniqueUsers != null
+    ? 'ผู้ใช้ที่ไม่ซ้ำ'
+    : uniqueCards != null
+      ? 'บัตรที่ไม่ซ้ำ'
+      : uniqueLocations != null
+        ? 'สถานที่ที่ไม่ซ้ำ'
+        : 'รายการที่ไม่ซ้ำ';
+  const uniqueValue = uniqueUsers ?? uniqueCards ?? uniqueLocations ?? 0;
+
   const cards = [
-    {
-      title: 'การเข้าถึงทั้งหมด',
-      value: stats.totalAccess,
-      icon: DoorOpen,
-      color: 'text-blue-600'
-    },
-    {
-      title: 'การเข้าถึงสำเร็จ',
-      value: stats.successfulAccess,
-      icon: TrendingUp,
-      color: 'text-green-600'
-    },
-    {
-      title: 'การเข้าถึงถูกปฏิเสธ',
-      value: stats.deniedAccess,
-      icon: AlertCircle,
-      color: 'text-red-600'
-    },
-    {
-      title: 'ผู้ใช้ที่ไม่ซ้ำ',
-      value: stats.uniqueUsers,
-      icon: Users,
-      color: 'text-purple-600'
-    }
+    { title: 'การเข้าถึงทั้งหมด', value: total, icon: DoorOpen, color: 'text-blue-600' },
+    { title: 'การเข้าถึงสำเร็จ', value: success, icon: TrendingUp, color: 'text-green-600' },
+    { title: 'การเข้าถึงถูกปฏิเสธ', value: denied, icon: AlertCircle, color: 'text-red-600' },
+    { title: uniqueTitle, value: uniqueValue, icon: Users, color: 'text-purple-600' }
   ];
 
   return (

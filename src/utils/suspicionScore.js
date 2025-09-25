@@ -3,10 +3,16 @@
 // Returns: array of { user, score, breakdown: [...], counts: {...}, lastTime, lastLocation }
 
 export function computeSuspicionAll(logs = []) {
+  const isEmptyish = (v) => {
+    if (v === undefined || v === null) return true;
+    const s = String(v).trim().toLowerCase();
+    return s === '' || ['ไม่ระบุ', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+  };
   const byUser = new Map();
 
   for (const log of logs) {
-    const user = log.cardName || log.cardNumber || 'ไม่ระบุ';
+    const user = isEmptyish(log.cardName || log.cardNumber) ? '' : (log.cardName || log.cardNumber);
+    if (isEmptyish(user)) continue; // skip entries without identifiable user
     const entry = byUser.get(user) || {
       user,
       total: 0,
@@ -16,7 +22,7 @@ export function computeSuspicionAll(logs = []) {
       locations: new Set(),
       reasons: new Map(),
       lastTime: null,
-      lastLocation: log.location || log.door || '-',
+      lastLocation: (isEmptyish(log.location || log.door) ? '' : (log.location || log.door)),
     };
 
     entry.total += 1;
@@ -37,11 +43,11 @@ export function computeSuspicionAll(logs = []) {
       }
     }
 
-    const loc = log.location || log.door;
-    if (loc) entry.locations.add(loc);
+    const loc = (isEmptyish(log.location || log.door) ? '' : (log.location || log.door));
+    if (!isEmptyish(loc)) entry.locations.add(loc);
 
-    const reason = log.reason || '-';
-    entry.reasons.set(reason, (entry.reasons.get(reason) || 0) + 1);
+    const reason = isEmptyish(log.reason) ? '' : log.reason;
+    if (!isEmptyish(reason)) entry.reasons.set(reason, (entry.reasons.get(reason) || 0) + 1);
 
     byUser.set(user, entry);
   }

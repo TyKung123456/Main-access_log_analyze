@@ -401,11 +401,21 @@ class ApiService {
   }
 
   async getUploadStats() {
-    return this.request('/api/upload-log/stats');
+    const endpoints = ['/api/upload/stats', '/api/upload-log/stats'];
+    let lastError;
+    for (const ep of endpoints) {
+      try { return await this.request(ep); } catch (e) { lastError = e; if (e.message.includes('404')) continue; else break; }
+    }
+    throw lastError || new Error('No upload stats endpoint available');
   }
 
   async getUploadHistory(params) {
-    return this.request('/api/upload-log/history', 'GET', null, params);
+    const endpoints = ['/api/upload/history', '/api/upload-log/history'];
+    let lastError;
+    for (const ep of endpoints) {
+      try { return await this.request(ep, 'GET', null, params); } catch (e) { lastError = e; if (e.message.includes('404')) continue; else break; }
+    }
+    throw lastError || new Error('No upload history endpoint available');
   }
 
   // Export

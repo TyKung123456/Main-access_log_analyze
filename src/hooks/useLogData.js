@@ -5,6 +5,15 @@ import { processChartData, calculateStats } from '../utils/dataProcessing';
 import apiService from '../services/apiService';
 import { transformFiltersForApi } from '../utils/filterUtils';
 
+// Helper to normalize direction variants to IN / OUT
+const normalizeDirection = (v) => {
+  const s = (v ?? '').toString().trim().toUpperCase();
+  if (!s) return '';
+  if (['IN', 'INBOUND', 'เข้า'].includes(s)) return 'IN';
+  if (['OUT', 'OUTBOUND', 'ออก'].includes(s)) return 'OUT';
+  return s; // keep as-is for other possible values
+};
+
 export const useLogData = () => {
   const [logData, setLogData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -17,17 +26,45 @@ export const useLogData = () => {
 
   const useRealData = import.meta.env.VITE_ENABLE_SAMPLE_DATA !== 'true';
 
-  const transformApiData = useCallback((item) => ({
-    id: item['Transaction ID'] || item.id,
-    dateTime: new Date(item['Date Time']),
-    location: item.Location,
-    direction: item.Direction,
-    allow: item.Allow, // Keep for backward compatibility if needed
-    status: item.Allow ? 'allowed' : 'denied', // Add a status string
-    reason: item.Reason || 'N/A', // Add reason for denied access
-    cardName: item['Card Name'],
-    userType: item['User Type'],
-  }), []);
+  const transformApiData = useCallback((item) => {
+    // Normalize Allow to boolean
+    const rawAllow = item.Allow;
+    let allowBool;
+    if (typeof rawAllow === 'boolean') allowBool = rawAllow;
+    else if (typeof rawAllow === 'number') allowBool = rawAllow !== 0;
+    else if (typeof rawAllow === 'string') {
+      const s = rawAllow.trim().toLowerCase();
+      allowBool = ['true','t','1','yes','y'].includes(s) ? true : ['false','f','0','no','n'].includes(s) ? false : Boolean(rawAllow);
+    } else {
+      allowBool = Boolean(rawAllow);
+    }
+
+    // Robust date parsing (handle 'YYYY-MM-DD HH:mm:ss')
+    const dtRaw = item['Date Time'];
+    let dt;
+    if (dtRaw instanceof Date) dt = dtRaw;
+    else if (typeof dtRaw === 'string') {
+      const hasT = dtRaw.includes('T');
+      dt = new Date(hasT ? dtRaw : dtRaw.replace(' ', 'T'));
+      if (isNaN(dt)) {
+        // Fallback: try Date.parse directly
+        const ts = Date.parse(dtRaw);
+        dt = isNaN(ts) ? null : new Date(ts);
+      }
+    } else dt = null;
+
+    return {
+      id: item['Transaction ID'] || item.id,
+      dateTime: dt,
+      location: item.Location,
+      direction: normalizeDirection(item.Direction || item.direction),
+      allow: allowBool,
+      status: allowBool ? 'allowed' : 'denied',
+      reason: item.Reason || '',
+      cardName: item['Card Name'],
+      userType: item['User Type'],
+    };
+  }, []);
 
   const fetchAPIData = useCallback(async (page = 1, filters = {}, currentSort = sort) => {
     setLoading(true);
@@ -54,14 +91,29 @@ export const useLogData = () => {
       ]);
 
       setStats(statsRes);
+
+      // Ensure logsRes.data is an array before mapping
+      const transformedLogs = (logsRes.data || []).map(transformApiData);
+
+      // Fallback: build directionData from logs if API returned empty
+      const apiDirection = chartsRes[2]?.data || [];
+      let directionData = apiDirection;
+      if (!Array.isArray(apiDirection) || apiDirection.length === 0) {
+        const counts = transformedLogs.reduce((acc, row) => {
+          const key = (row.direction || '').toString().trim().toUpperCase();
+          if (key === 'IN' || key === 'OUT') acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, {});
+        directionData = ['IN', 'OUT']
+          .filter(k => counts[k] > 0)
+          .map(k => ({ direction: k, count: counts[k] }));
+      }
+
       setChartData({
         hourlyData: chartsRes[0]?.data || [],
         locationData: chartsRes[1]?.data || [],
-        directionData: chartsRes[2]?.data || []
+        directionData
       });
-      
-      // Ensure logsRes.data is an array before mapping
-      const transformedLogs = (logsRes.data || []).map(transformApiData);
       
       // Update both logData and filteredData states.
       setLogData(transformedLogs);

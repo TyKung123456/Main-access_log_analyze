@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import aiService from './services/aiService.js';
 import Header from './components/Layout/Header.jsx';
-import NavigationTabs from './components/Layout/NavigationTabs.jsx';
+// import NavigationTabs from './components/Layout/NavigationTabs.jsx';
+import SidebarNav from './components/Layout/SidebarNav.jsx';
 import UploadPage from './components/Upload/UploadPage.jsx';
 import ChatPage from './components/Chat/ChatPage.jsx';
 import CombinedDashboardAnalyticsPage from './Analytics/CombinedDashboardAnalyticsPage.jsx';
@@ -13,7 +14,7 @@ import { useFilters } from './hooks/useFilters.js';
 import { useChat } from './hooks/useChat.js';
 import { useUpload } from './hooks/useUpload.js';
 import LogDetailModal from './components/Dashboard/LogDetailModal.jsx';
-import { AlertCircle, CheckCircle, X, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle, X, RefreshCw, ChevronRight } from 'lucide-react';
 
 const AccessLogAnalyzer = () => {
   const [activeTab, setActiveTab] = useState('logs');
@@ -26,6 +27,7 @@ const AccessLogAnalyzer = () => {
   });
   const [selectedLogEntry, setSelectedLogEntry] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
@@ -112,6 +114,16 @@ const AccessLogAnalyzer = () => {
     clearError();
   };
 
+  // Allow children to request tab changes (from GoAccess page etc.)
+  useEffect(() => {
+    const onSetTab = (e) => {
+      if (!e || !e.detail) return;
+      setActiveTab(e.detail);
+    };
+    window.addEventListener('setActiveTab', onSetTab);
+    return () => window.removeEventListener('setActiveTab', onSetTab);
+  }, []);
+
   // System status helpers
   const getSystemStatusInfo = () => {
     const connected = Object.values(systemStatus).filter(s => s === 'connected').length;
@@ -143,6 +155,40 @@ const AccessLogAnalyzer = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [showUploadModal]);
+
+  // Close sidebar on ESC for smoother UX
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') setSidebarCollapsed(true); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Persist sidebar state & keyboard shortcut
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ala_sidebar_collapsed');
+      if (saved !== null) setSidebarCollapsed(saved === 'true');
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('ala_sidebar_collapsed', String(sidebarCollapsed)); } catch {}
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      // Ctrl/Cmd+M toggles sidebar, ignore inside inputs
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+      const isToggle = (e.key === 'm' || e.key === 'M') && (e.ctrlKey || e.metaKey);
+      if (isToggle) {
+        e.preventDefault();
+        setSidebarCollapsed((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Error Alert Component
   const ErrorAlert = ({ error, onClose }) => (
@@ -298,27 +344,47 @@ const AccessLogAnalyzer = () => {
     <div className="min-h-screen bg-blue-50">
       <Header pageTitle={getPageTitle().title} pageSubtitle={getPageTitle().subtitle} />
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Page Accent removed */}
-        {/* Error Alert */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
         {error && <ErrorAlert error={error} onClose={clearError} />}
-
-        {/* Loading Overlay */}
         {isLoading && <LoadingOverlay />}
 
-        {/* Navigation and Status */}
-        <div className="mb-6 flex items-center justify-between">
-          <NavigationTabs
-            activeTab={activeTab}
-            setActiveTab={handleTabChange}
-          />
-          <SystemStatus />
+        <div className="flex">
+          <div
+            className={`transition-[width,margin] duration-300 ease-out overflow-hidden ${sidebarCollapsed ? 'w-0 mr-0' : 'w-64 mr-6'} sticky top-[92px] sm:top-[84px] h-[calc(100vh-92px)] sm:h-[calc(100vh-84px)]`}
+            style={{ willChange: 'width, margin' }}
+          >
+            {!sidebarCollapsed && (
+              <SidebarNav
+                activeTab={activeTab}
+                setActiveTab={handleTabChange}
+                collapsed={false}
+                onToggle={() => setSidebarCollapsed(true)}
+              />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="mb-4 flex items-center justify-end">
+              <SystemStatus />
+            </div>
+            <main>
+              {renderContent()}
+            </main>
+          </div>
         </div>
 
-        {/* Main Content */}
-        <main>
-          {renderContent()}
-        </main>
+        {/* Floating open button when sidebar hidden */}
+        {sidebarCollapsed && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            className="fixed left-3 top-[92px] sm:top-[84px] z-[70] inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-200 text-blue-900 shadow-md ring-1 ring-blue-300 hover:bg-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-transform hover:scale-105"
+            title="เปิดเมนู"
+            aria-label="เปิดเมนู"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Removed overlay; sidebar now pushes content smoothly */}
       </div>
 
       {/* Log Detail Modal */}
@@ -355,9 +421,8 @@ const AccessLogAnalyzer = () => {
         </div>
       )}
 
-      {/* Simplified Footer */}
       <footer className="bg-white border-t border-gray-200 mt-8">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between text-sm text-gray-500">
             <div>
               <p>© 2024 Access Log Analyzer</p>
@@ -379,7 +444,7 @@ const AccessLogAnalyzer = () => {
       </footer>
     </div>
   );
-};
+}; 
 
 // Simplified Error Boundary
 class ErrorBoundary extends React.Component {

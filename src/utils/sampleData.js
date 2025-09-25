@@ -18,7 +18,11 @@ export const generateSampleData = (count = 50) => {
     'ห้องประชุม B',
     'โรงจอดรถ',
     'ห้องเซิร์ฟเวอร์',
-    'ห้องแล็บ'
+    'ห้องแล็บ',
+    // Security Rooms (mock)
+    'ห้องควบคุมความปลอดภัย A',
+    'ห้องควบคุมความปลอดภัย B',
+    'ห้องควบคุมความปลอดภัย C'
   ];
 
   const users = [
@@ -26,7 +30,7 @@ export const generateSampleData = (count = 50) => {
     'DIANA', 'EVE', 'FRANK', 'GRACE', 'HENRY'
   ];
 
-  const userTypes = ['EMPLOYEE', 'AFFILIATE', 'VISITOR', 'CONTRACTOR'];
+  const userTypes = ['EMPLOYEE', 'AFFILIATE', 'VISITOR', 'CONTRACTOR', 'SECURITY'];
   const directions = ['IN', 'OUT'];
   const reasons = ['Verify Success', 'Access Denied', 'Card Expired', 'Invalid Card'];
   const doors = ['NNN0501', 'NNN0502', 'NNN0503', 'NNN0504', 'NNN0505'];
@@ -68,6 +72,42 @@ export const generateSampleData = (count = 50) => {
       userType: userTypes[Math.floor(Math.random() * userTypes.length)],
       permission: allow ? 'General Permission Group' : 'Limited Access'
     });
+  }
+  // Ensure at least one off-hours non-security allowed IN event in a Security Room
+  const isOffHours = (d) => {
+    const h = d.getHours();
+    const dow = d.getDay();
+    return h >= 22 || h <= 6 || dow === 0 || dow === 6;
+  };
+  const isSecurityRoom = (loc) => {
+    const s = String(loc || '').toLowerCase();
+    return s.includes('security') || s.includes('ห้องควบคุมความปลอดภัย') || s.includes('ห้องความปลอดภัย') || s.includes('ศูนย์รักษาความปลอดภัย');
+  };
+  const hasTarget = data.some(x => isSecurityRoom(x.location) && x.direction === 'IN' && x.allow === true && (x.userType || '').toUpperCase() !== 'SECURITY' && isOffHours(new Date(x.dateTime)));
+  if (!hasTarget) {
+    const dt = new Date(now.getTime());
+    dt.setHours(23, 20, 0, 0); // 23:20 today
+    const fallback = {
+      file: 1,
+      dateTime: dt,
+      day: dt.getDate(),
+      month: dt.getMonth() + 1,
+      year: dt.getFullYear(),
+      yearMm: `${dt.getFullYear()}_${(dt.getMonth() + 1).toString().padStart(2, '0')}`,
+      transactionId: generateTransactionId(),
+      door: 'SEC-B-02',
+      device: 'Reader-SecB-02',
+      location: 'ห้องควบคุมความปลอดภัย B',
+      direction: 'IN',
+      allow: true,
+      reason: 'Verify Success',
+      channel: 'CARD',
+      cardName: 'พนักงานเวรดึก',
+      cardNumber: `0000${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+      userType: 'EMPLOYEE',
+      permission: 'EMP_SPECIAL'
+    };
+    data.push(fallback);
   }
 
   // เรียงตามเวลาจากใหม่ไปเก่า

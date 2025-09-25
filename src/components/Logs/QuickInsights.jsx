@@ -5,6 +5,12 @@ import LocationDistributionChart from '../Dashboard/Charts/LocationDistributionC
 import DirectionChart from '../Dashboard/Charts/DirectionChart.jsx';
 
 const QuickInsights = ({ params }) => {
+  const isEmptyish = (v) => {
+    if (v === undefined || v === null) return true;
+    const s = String(v).trim().toLowerCase();
+    return s === '' || ['ไม่ระบุ', 'ไม่ระบุสถานที่', 'ไม่ระบุชื่อ', 'n/a', 'na', '-', '—', 'unspecified', 'not specified'].includes(s);
+  };
+  const clean = (v) => (isEmptyish(v) ? '' : (typeof v === 'string' ? v.trim() : v));
   const [hourly, setHourly] = useState({ data: [], loading: true });
   const [location, setLocation] = useState({ data: [], loading: true });
   const [direction, setDirection] = useState({ data: [], loading: true });
@@ -23,9 +29,27 @@ const QuickInsights = ({ params }) => {
           apiService.getChartData('direction', params),
         ]);
         if (!mounted) return;
+        const dirData = Array.isArray(d?.data) ? d.data : [];
+        let finalDir = dirData;
+        if (dirData.length === 0) {
+          try {
+            // Fallback: compute from logs when chart API returns empty
+            const logRes = await apiService.getLogs({ ...(params||{}), page: 1, limit: 1000 });
+            const rows = Array.isArray(logRes?.data) ? logRes.data : [];
+            const counts = rows.reduce((acc, r) => {
+              const raw = (r.Direction || r.direction || '').toString().trim().toUpperCase();
+              const val = raw === 'INBOUND' || raw === 'เข้า' ? 'IN' : raw === 'OUTBOUND' || raw === 'ออก' ? 'OUT' : raw;
+              if (val === 'IN' || val === 'OUT') acc[val] = (acc[val] || 0) + 1;
+              return acc;
+            }, {});
+            finalDir = ['IN','OUT'].filter(k => counts[k] > 0).map(k => ({ direction: k, count: counts[k] }));
+          } catch(e) {
+            finalDir = [];
+          }
+        }
         setHourly({ data: h?.data || [], loading: false });
         setLocation({ data: l?.data || [], loading: false });
-        setDirection({ data: d?.data || [], loading: false });
+        setDirection({ data: finalDir, loading: false });
       } catch (e) {
         if (!mounted) return;
         setHourly({ data: [], loading: false });
@@ -43,11 +67,12 @@ const QuickInsights = ({ params }) => {
   const top5Locations = useMemo(() => {
     return (location.data || [])
       .map(i => ({
-        name: i.location || i.locationDisplay || 'ไม่ระบุ',
+        name: clean(i.location || i.locationDisplay),
         count: parseInt(i.count) || 0,
         success: parseInt(i.success) || parseInt(i.successfulAccess) || 0,
         denied: parseInt(i.denied) || parseInt(i.deniedAccess) || 0,
       }))
+      .filter(i => !isEmptyish(i.name))
       .sort((a,b) => b.count - a.count)
       .slice(0,5);
   }, [location.data]);
@@ -63,9 +88,9 @@ const QuickInsights = ({ params }) => {
       const normalize = (r) => ({
         dt: new Date(r['Date Time'] || r.dateTime),
         allow: (r.Allow === true || r.Allow === 't' || r.allow === true),
-        location: r.Location || r.location,
-        cardName: r['Card Name'] || r.cardName || r['Card Number'] || r.cardNumber,
-        reason: r.Reason || r.reason || '-'
+        location: clean(r.Location || r.location),
+        cardName: clean(r['Card Name'] || r.cardName || r['Card Number'] || r.cardNumber),
+        reason: clean(r.Reason || r.reason)
       });
       const items = rows.map(normalize).filter(x => x.dt && !isNaN(x.dt));
       const total = items.length;
@@ -79,8 +104,8 @@ const QuickInsights = ({ params }) => {
         const d = it.dt.getDay();
         if (h >= 22 || h <= 6) offHours++;
         if (d === 0 || d === 6) weekend++;
-        users.add(it.cardName || '-');
-        reasons.set(it.reason, (reasons.get(it.reason) || 0) + 1);
+        if (!isEmptyish(it.cardName)) users.add(it.cardName);
+        if (!isEmptyish(it.reason)) reasons.set(it.reason, (reasons.get(it.reason) || 0) + 1);
         if (!lastTime || it.dt > lastTime) lastTime = it.dt;
       }
       const deniedRate = total > 0 ? Math.round((denied/total)*100) : 0;
