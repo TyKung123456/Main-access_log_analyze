@@ -11,7 +11,6 @@ import CasesPage from './components/Cases/CasesPage.jsx';
 import PivotTable from './components/Analytics/PivotTable.jsx';
 import { useLogData } from './hooks/useLogData.js';
 import { useFilters } from './hooks/useFilters.js';
-import { useChat } from './hooks/useChat.js';
 import { useUpload } from './hooks/useUpload.js';
 import LogDetailModal from './components/Dashboard/LogDetailModal.jsx';
 import { AlertCircle, CheckCircle, X, RefreshCw, ChevronRight } from 'lucide-react';
@@ -33,7 +32,6 @@ const AccessLogAnalyzer = () => {
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
   const { filters, updateFilter, clearFilters, getFilterCount } = useFilters();
-  const { chatMessages, currentMessage, setCurrentMessage, handleSendMessage, isAnalyzing } = useChat(stats);
   const { isUploading, uploadProgress, uploadResult, uploadError, handleFileUpload } = useUpload();
 
   // Additional state
@@ -264,15 +262,11 @@ const AccessLogAnalyzer = () => {
       ),
       chat: (
         <ChatPage
-          chatMessages={chatMessages}
-          currentMessage={currentMessage}
-          setCurrentMessage={setCurrentMessage}
-          onSendMessage={handleSendMessage}
-          isAnalyzing={isAnalyzing}
-          isAIAvailable={systemStatus.ai === 'connected'}
-          onError={setError}
-          logDataStats={stats}
+          stats={stats}
           uploadStats={uploadStats}
+          filters={filters}
+          chartData={chartData}
+          isAIAvailable={systemStatus.ai === 'connected'}
         />
       ),
       dashboard: (

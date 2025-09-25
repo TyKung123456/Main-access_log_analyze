@@ -344,6 +344,410 @@ ${fileContext}
     return 'ไม่พบการปฏิเสธ ระบบทำงานดี';
   }
 
+  async generateReport({
+    stats = {},
+    uploadStats = null,
+    filters = {},
+    chartData = {},
+    style = 'business_concise',
+    layout = 'standard'
+  } = {}) {
+    try {
+      const markdown = this.buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout });
+      return { markdown, style, layout };
+    } catch (error) {
+      console.error('[AI Service] generateReport failed:', error);
+      throw new Error('ไม่สามารถสร้างรายงานได้ในขณะนี้');
+    }
+  }
+
+  buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout }) {
+    const styleConfig = this.getReportStyleConfig(style);
+    const layoutConfig = this.getReportLayoutConfig(layout);
+    const metrics = this.extractCoreMetrics(stats);
+    const locationHighlights = this.getLocationHighlights(stats, chartData);
+    const directionSummary = this.getDirectionSummary(chartData);
+    const peakHour = this.getPeakHour(chartData);
+    const filterSummary = this.summariseFilters(filters);
+    const now = new Date();
+
+    const header = [
+      '# รายงานวิเคราะห์การเข้าใช้งานระบบ',
+      '',
+      `**วันที่จัดทำ:** ${now.toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}`,
+      `**รูปแบบรายงาน:** ${layoutConfig.label} • ${styleConfig.label}`,
+    ];
+
+    if (uploadStats?.fileName) {
+      const records = typeof uploadStats.totalRecords === 'number'
+        ? `${uploadStats.totalRecords.toLocaleString('th-TH')} รายการ`
+        : '- รายการ';
+      header.push(`**ข้อมูลนำเข้า:** ${uploadStats.fileName} (${records})`);
+    }
+
+    header.push('');
+    header.push('---');
+    header.push('');
+
+    const context = {
+      styleConfig,
+      layoutConfig,
+      metrics,
+      locationHighlights,
+      directionSummary,
+      peakHour,
+      filterSummary,
+      uploadStats,
+      stats
+    };
+
+    const sections = layoutConfig.sections
+      .map((sectionKey) => this.renderReportSection(sectionKey, context))
+      .filter(Boolean);
+
+    return [...header, ...sections].join('\n').trim();
+  }
+
+  renderReportSection(sectionKey, context) {
+    const { styleConfig, metrics, locationHighlights, directionSummary, peakHour, filterSummary, uploadStats, stats } = context;
+    const numberOrDash = (value, suffix = 'ครั้ง') =>
+      typeof value === 'number' && !Number.isNaN(value) ? `${value.toLocaleString('th-TH')} ${suffix}` : `- ${suffix}`;
+
+    switch (sectionKey) {
+      case 'executive_summary': {
+        const lines = [
+          '## บทสรุปผู้บริหาร',
+          styleConfig.summaryIntro,
+          '',
+          `- ปริมาณการเข้าใช้งานรวม ${numberOrDash(metrics.total, 'ครั้ง')}`,
+          `- อัตราอนุมัติ ${metrics.successRateText}`,
+          `- การปฏิเสธ ${numberOrDash(metrics.denied, 'ครั้ง')} (${metrics.deniedRateText})`,
+          `- ผู้ใช้ที่ไม่ซ้ำ ${numberOrDash(metrics.uniqueUsers, 'คน')}`
+        ];
+
+        if (peakHour) {
+          lines.push(`- ช่วงเวลาที่มีการใช้งานสูงสุด: ${peakHour}`);
+        }
+
+        if (locationHighlights.length > 0) {
+          lines.push(`- พื้นที่ที่ใช้บ่อยที่สุด: ${locationHighlights[0].label} (${locationHighlights[0].valueText})`);
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'scope': {
+        const lines = [
+          '## ขอบเขตและข้อมูลที่ใช้',
+          styleConfig.scopeIntro,
+          ''
+        ];
+
+        if (filterSummary.length > 0) {
+          lines.push('**เงื่อนไขการคัดกรอง:**');
+          lines.push(...filterSummary.map((item) => `- ${item}`));
+        } else {
+          lines.push('- ไม่มีการคัดกรองเพิ่มเติม ใช้ข้อมูลทั้งหมดที่มีอยู่');
+        }
+
+        if (uploadStats?.processingTime) {
+          lines.push(`- เวลาประมวลผลไฟล์ล่าสุด: ${uploadStats.processingTime}`);
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'kpi': {
+        const lines = [
+          '## KPI / สถิติภาพรวม',
+          styleConfig.kpiIntro,
+          '',
+          `- จำนวนการเข้าใช้งานทั้งหมด: ${numberOrDash(metrics.total)}`,
+          `- การเข้าใช้งานสำเร็จ: ${numberOrDash(metrics.success)} (${metrics.successRateText})`,
+          `- การเข้าใช้งานถูกปฏิเสธ: ${numberOrDash(metrics.denied)} (${metrics.deniedRateText})`,
+          `- ผู้ใช้ที่ไม่ซ้ำ: ${numberOrDash(metrics.uniqueUsers, 'คน')}`
+        ];
+
+        if (directionSummary) {
+          lines.push(`- สัดส่วนทิศทางการเข้า/ออก: ${directionSummary}`);
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'findings': {
+        const lines = [
+          '## ข้อค้นพบที่สำคัญ',
+          styleConfig.findingIntro,
+          ''
+        ];
+
+        lines.push(metrics.successRate >= 0.95
+          ? '- ระบบมีอัตราการอนุมัติสูงกว่า 95% แสดงถึงการตั้งสิทธิ์ที่เหมาะสม'
+          : '- ระบบมีอัตราการอนุมัติต่ำกว่า 95% แนะนำให้ตรวจสอบสิทธิ์ของผู้ใช้งานที่ถูกปฏิเสธบ่อยครั้ง');
+
+        if (metrics.deniedRate > 0.1) {
+          lines.push('- พบอัตราปฏิเสธเกิน 10% ควรตรวจสอบสาเหตุและพื้นที่ที่เกิดขึ้น');
+        } else if (metrics.deniedRate >= 0) {
+          lines.push('- อัตราปฏิเสธอยู่ในระดับยอมรับได้ แต่ควรติดตามต่อเนื่อง');
+        }
+
+        if (locationHighlights.length > 0) {
+          const topLocations = locationHighlights
+            .map((item, idx) => `${idx + 1}. ${item.label} (${item.valueText})`).join('\n');
+          lines.push('');
+          lines.push('**พื้นที่ที่ใช้งานสูงสุด:**');
+          lines.push(topLocations);
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'risks': {
+        const lines = [
+          '## ความเสี่ยงและผลกระทบ',
+          styleConfig.riskIntro,
+          ''
+        ];
+
+        if (metrics.deniedRate > 0.15) {
+          lines.push('- ความเสี่ยงด้านสิทธิ์เข้าถึง: อัตราปฏิเสธเกิน 15% อาจสะท้อนการตั้งสิทธิ์ไม่เหมาะสม');
+        } else {
+          lines.push('- ความเสี่ยงด้านสิทธิ์เข้าถึงอยู่ในเกณฑ์ควบคุมได้ แต่ควรมีการตรวจรายการผิดปกติเป็นระยะ');
+        }
+
+        if (peakHour) {
+          lines.push(`- ความเสี่ยงจากการหนาแน่นของระบบในช่วง ${peakHour}`);
+        }
+
+        lines.push('- ผลกระทบที่อาจเกิดขึ้น: ระบบติดขัด, การร้องเรียนจากผู้ใช้, และช่องโหว่ด้านความปลอดภัย');
+
+        return lines.join('\n');
+      }
+
+      case 'recommendations': {
+        const lines = [
+          '## ข้อเสนอแนะ',
+          styleConfig.recommendationIntro,
+          '',
+          '- กำหนดกระบวนการทบทวนสิทธิ์เข้าถึงของผู้ใช้งานตามรอบเวลา (เช่น รายไตรมาส)',
+          '- ติดตั้งการแจ้งเตือนทันทีเมื่อพบการปฏิเสธซ้ำในพื้นที่เดียวกัน',
+          '- ออกคู่มือการใช้งานและสร้าง Awareness ให้บุคลากรเรื่องการใช้บัตร/รหัสผ่านอย่างปลอดภัย'
+        ];
+
+        if (stats?.alerts?.length) {
+          lines.push(`- จัดลำดับความสำคัญเหตุการณ์ ${stats.alerts.length} รายการที่ระบบตั้งข้อสังเกตไว้`);
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'appendix': {
+        const lines = [
+          '## ภาคผนวก',
+          styleConfig.appendixIntro,
+          ''
+        ];
+
+        lines.push('- รายงานจัดทำโดยระบบ Access Log Analyzer');
+        if (uploadStats?.fileName) {
+          lines.push(`- ไฟล์ที่ใช้ล่าสุด: ${uploadStats.fileName}`);
+        }
+        if (uploadStats?.uploadTime) {
+          lines.push(`- เวลาที่อัปโหลด: ${new Date(uploadStats.uploadTime).toLocaleString('th-TH')}`);
+        }
+        lines.push('- รูปแบบไฟล์ส่งออก: Markdown / HTML (พร้อมสำหรับการแปลงเป็น PDF)');
+
+        return lines.join('\n');
+      }
+
+      case 'next_steps': {
+        return [
+          '## ขั้นตอนถัดไปที่แนะนำ',
+          '- นัดประชุมสรุปรายงานกับผู้มีส่วนได้ส่วนเสียภายใน 1 สัปดาห์',
+          '- จัดทำแผนดำเนินการแก้ไขสำหรับประเด็นที่พบและกำหนดผู้รับผิดชอบ',
+          '- ติดตามผลลัพธ์และอัปเดตรายงานในรอบถัดไป'
+        ].join('\n');
+      }
+
+      default:
+        return '';
+    }
+  }
+
+  getReportStyleConfig(style) {
+    switch (style) {
+      case 'formal':
+        return {
+          label: 'ทางการ',
+          summaryIntro: 'รายงานฉบับนี้จัดทำขึ้นอย่างเป็นทางการเพื่อสรุปสถานะการเข้าใช้งานระบบและมาตรการที่เกี่ยวข้อง.',
+          scopeIntro: 'ข้อมูลและผลการวิเคราะห์ในรายงานนี้อ้างอิงจากชุดข้อมูลล่าสุดที่ได้รับมอบหมายภายใต้ขอบเขตงานที่กำหนด.',
+          kpiIntro: 'สถิติหลักที่ใช้ในการประเมินได้ถูกจัดเรียงตามมาตรฐานขององค์กรเพื่อให้ตรวจสอบได้ง่าย.',
+          findingIntro: 'การวิเคราะห์ภาพรวมพบประเด็นที่ควรแจ้งให้ผู้บริหารทราบดังต่อไปนี้:',
+          riskIntro: 'จากข้อมูลที่ได้รับ มีความเสี่ยงหลักที่ต้องพิจารณาและจัดการอย่างเหมาะสม:',
+          recommendationIntro: 'เพื่อให้การบริหารจัดการมีประสิทธิภาพ ขอเสนอแนวทางดังต่อไปนี้:',
+          appendixIntro: 'ภาคผนวกนี้สรุปรายละเอียดของข้อมูลและการอ้างอิงที่ใช้ในรายงาน.'
+        };
+      case 'analytical':
+        return {
+          label: 'เชิงวิเคราะห์',
+          summaryIntro: 'รายงานฉบับนี้เน้นการวิเคราะห์เชิงลึกเพื่อหาความเชื่อมโยงและแนวโน้มที่สำคัญจากข้อมูลการเข้าใช้งาน.',
+          scopeIntro: 'การวิเคราะห์ครอบคลุมข้อมูลเชิงเวลา พื้นที่ และประเภทผู้ใช้งาน เพื่อหาความผิดปกติหรือจุดที่ควรเพิ่มการควบคุม.',
+          kpiIntro: 'ดัชนีชี้วัด (KPI) ถูกจัดลำดับตามผลกระทบต่อประสิทธิภาพและความปลอดภัยของระบบ.',
+          findingIntro: 'จากข้อมูลที่ประมวลผล พบประเด็นเชิงลึกที่ควรติดตามดังนี้:',
+          riskIntro: 'ประเมินความเสี่ยงจากมุมมองเชิงสถิติและแนวโน้ม พบประเด็นที่อาจกระทบต่อความต่อเนื่องของบริการ:',
+          recommendationIntro: 'เพื่อรองรับการเติบโตและลดความเสี่ยง แนะนำให้ดำเนินการดังต่อไปนี้:',
+          appendixIntro: 'รวบรวมสมมติฐานและแหล่งข้อมูลที่ใช้ในการวิเคราะห์ เพื่อความโปร่งใสและตรวจสอบย้อนกลับได้.'
+        };
+      default:
+        return {
+          label: 'เชิงธุรกิจ (กระชับ)',
+          summaryIntro: 'รายงานฉบับนี้สรุปประเด็นเชิงธุรกิจที่จำเป็นต่อการตัดสินใจ โดยย่อยข้อมูลให้กระชับและเข้าใจง่าย.',
+          scopeIntro: 'ชุดข้อมูลนี้ครอบคลุมเหตุการณ์ล่าสุดที่เกี่ยวข้องกับการเข้าออกพื้นที่ เพื่อรองรับการตัดสินใจเชิงบริหาร.',
+          kpiIntro: 'KPI หลักต่อไปนี้ถูกคัดเลือกเพื่อสะท้อนภาพรวมประสิทธิภาพของระบบและประสบการณ์ผู้ใช้งาน.',
+          findingIntro: 'ประเด็นที่ควรสื่อสารกับผู้บริหารและทีมปฏิบัติการมีดังนี้:',
+          riskIntro: 'สรุปความเสี่ยงที่ควรจับตาและผลกระทบหากไม่ได้รับการแก้ไขทันท่วงที:',
+          recommendationIntro: 'ข้อเสนอแนะเชิงบริหารเพื่อให้การจัดการเป็นไปอย่างคล่องตัวและลดความเสี่ยง:',
+          appendixIntro: 'รายละเอียดประกอบและข้อมูลเพิ่มเติมสำหรับทีมที่ต้องการตรวจสอบย้อนหลัง.'
+        };
+    }
+  }
+
+  getReportLayoutConfig(layout) {
+    switch (layout) {
+      case 'summary':
+        return {
+          label: 'แบบย่อ',
+          sections: ['executive_summary', 'kpi', 'findings', 'recommendations']
+        };
+      case 'executive':
+        return {
+          label: 'เชิงผู้บริหาร',
+          sections: ['executive_summary', 'findings', 'risks', 'recommendations', 'next_steps']
+        };
+      default:
+        return {
+          label: 'มาตรฐาน',
+          sections: ['executive_summary', 'scope', 'kpi', 'findings', 'risks', 'recommendations', 'appendix']
+        };
+    }
+  }
+
+  extractCoreMetrics(stats = {}) {
+    const total = this.pickNumberFromStats(stats, ['totalAccess', 'totalLogs', 'total', 'totalRecords', 'count']);
+    const success = this.pickNumberFromStats(stats, ['successfulAccess', 'success', 'allowed', 'allowCount']);
+    const denied = this.pickNumberFromStats(stats, ['deniedAccess', 'denied', 'blocked', 'denyCount']);
+    const uniqueUsers = this.pickNumberFromStats(stats, ['uniqueUsers', 'uniqueCards', 'uniqueCardHolders']);
+
+    const successRate = total ? success / total : 0;
+    const deniedRate = total ? denied / total : 0;
+
+    return {
+      total: total ?? 0,
+      success: success ?? 0,
+      denied: denied ?? 0,
+      uniqueUsers: uniqueUsers ?? 0,
+      successRate,
+      deniedRate,
+      successRateText: total ? `${(successRate * 100).toFixed(1)}%` : 'ไม่พบข้อมูล',
+      deniedRateText: total ? `${(deniedRate * 100).toFixed(1)}%` : 'ไม่พบข้อมูล'
+    };
+  }
+
+  pickNumberFromStats(stats, keys) {
+    const sources = [stats, stats?.overview, stats?.summary];
+    for (const source of sources) {
+      if (!source || typeof source !== 'object') continue;
+      for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'number' && !Number.isNaN(value)) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  summariseFilters(filters = {}) {
+    if (!filters || typeof filters !== 'object') return [];
+    return Object.entries(filters)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(([key, value]) => {
+        if (Array.isArray(value)) {
+          return `${key}: ${value.join(', ')}`;
+        }
+        if (typeof value === 'object') {
+          return `${key}: ${JSON.stringify(value)}`;
+        }
+        return `${key}: ${value}`;
+      });
+  }
+
+  getLocationHighlights(stats = {}, chartData = {}) {
+    const candidates = [];
+
+    if (Array.isArray(stats.topLocations)) {
+      candidates.push(...stats.topLocations);
+    }
+    if (Array.isArray(chartData.locationData)) {
+      candidates.push(...chartData.locationData);
+    }
+
+    const normalised = candidates
+      .map((item) => {
+        const label = item.name || item.location || item.label;
+        const value = item.count || item.value || item.total;
+        return label && typeof value === 'number'
+          ? { label, value, valueText: `${value.toLocaleString('th-TH')} ครั้ง` }
+          : null;
+      })
+      .filter(Boolean);
+
+    const unique = [];
+    const seen = new Set();
+    for (const item of normalised) {
+      if (seen.has(item.label)) continue;
+      seen.add(item.label);
+      unique.push(item);
+    }
+
+    return unique.sort((a, b) => b.value - a.value).slice(0, 3);
+  }
+
+  getDirectionSummary(chartData = {}) {
+    if (!Array.isArray(chartData.directionData) || chartData.directionData.length === 0) return '';
+    const mapped = chartData.directionData.map((item) => ({
+      label: (item.direction || item.name || item.label || '').toString().toUpperCase(),
+      value: item.count || item.value || 0,
+    })).filter((x) => x.label === 'IN' || x.label === 'OUT');
+    const total = mapped.reduce((sum, it) => sum + (it.value || 0), 0);
+    if (!total) return '';
+    const parts = mapped
+      .filter((it) => it.value > 0)
+      .map((it) => {
+        const percent = ((it.value / total) * 100).toFixed(1);
+        const th = it.label === 'IN' ? 'เข้า' : 'ออก';
+        return `${th}: ${percent}%`;
+      });
+    return parts.join(' / ');
+  }
+
+  getPeakHour(chartData = {}) {
+    if (!Array.isArray(chartData.hourlyData) || chartData.hourlyData.length === 0) return '';
+    const sorted = [...chartData.hourlyData].sort((a, b) => (b.count || 0) - (a.count || 0));
+    const top = sorted[0];
+    if (!top || !top.count) return '';
+    // normalize label to HH:mm
+    let hourLabel = top.hour || top.label || '';
+    const m = hourLabel.match(/^(\d{1,2})(?::(\d{2}))?/);
+    if (m) {
+      const h = String(parseInt(m[1], 10)).padStart(2, '0');
+      const mm = m[2] || '00';
+      hourLabel = `${h}:${mm}`;
+    }
+    return `${hourLabel} — ${top.count.toLocaleString('th-TH')} ครั้ง`;
+  }
+
   getProviderInfo() {
     return {
       provider: this.provider,

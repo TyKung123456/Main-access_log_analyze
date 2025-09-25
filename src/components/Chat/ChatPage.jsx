@@ -1,755 +1,715 @@
-// src/components/Chat/ChatPage.jsx - Beautiful & User-Friendly UI
-import React, { useEffect, useRef, useState } from 'react';
-import { useChat } from '../../hooks/useChat';
+import React, { useMemo, useRef, useState } from 'react';
 import {
-  Upload,
-  AlertCircle,
-  CheckCircle,
-  FileText,
-  BarChart3,
-  Clock,
-  XCircle,
   Sparkles,
-  TrendingUp,
-  Database,
-  Zap,
-  ChevronDown,
-  Settings,
-  Shield,
-  ArrowRight,
-  Activity,
-  Trash2,
-  Info,
-  Wifi,
-  WifiOff,
   RefreshCw,
-  MessageSquare,
-  Server,
-  Brain,
-  Globe
+  Copy,
+  CheckCircle,
+  AlertCircle,
+  FileDown,
+  Download,
+  FileText,
+  Info,
+  Eye,
+  Settings,
+  ChevronLeft,
+  Plus,
+  BarChart3,
+  Zap,
+  PieChart as PieChartIcon,
+  TrendingUp
 } from 'lucide-react';
-import { useLogData } from '../../hooks/useLogData';
-import ChatMessage from './ChatMessage';
-import ChatInput from './ChatInput';
-import aiService from '../../services/aiService';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-const ChatPage = () => {
-  const { stats } = useLogData();
+const stylePresets = [
+  { value: 'business_concise', label: 'ธุรกิจ', icon: '💼' },
+  { value: 'formal', label: 'ทางการ', icon: '📋' },
+  { value: 'analytical', label: 'วิเคราะห์', icon: '📊' }
+];
 
-  const {
-    messages,
-    isLoading,
-    error,
-    handleSendMessage,
-    clearMessages,
-    clearError,
-    testOllamaConnection,
-    modelInfo,
-    setOllamaModel,
-    setFileContext
-  } = useChat(stats);
+const layoutPresets = [
+  { value: 'standard', label: 'มาตรฐาน', icon: '📄' },
+  { value: 'summary', label: 'แบบย่อ', icon: '📝' },
+  { value: 'executive', label: 'ผู้บริหาร', icon: '👔' }
+];
 
-  const messagesEndRef = useRef(null);
-  const chatContainerRef = useRef(null);
-  const [connectionStatus, setConnectionStatus] = useState('checking');
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
-  const fileInputRef = useRef(null);
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
 
-  // Auto scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'end'
-      });
+const convertMarkdownToHtml = (markdown, includeCharts = false, chartData = null) => {
+  if (!markdown) return '<div class="text-slate-400 text-center py-8">ยังไม่มีเนื้อหา</div>';
+
+  const lines = markdown.split('\n');
+  const html = [];
+  let inList = false;
+  let inTable = false;
+
+  const closeList = () => {
+    if (inList) {
+      html.push('</ul>');
+      inList = false;
     }
-  }, [messages, isLoading]);
+  };
 
-  // Check Ollama connection
-  useEffect(() => {
-    const checkConnection = async () => {
-      if (!modelInfo.url) {
-        setConnectionStatus('checking');
+  const closeTable = () => {
+    if (inTable) {
+      html.push('</tbody></table></div>');
+      inTable = false;
+    }
+  };
+
+  lines.forEach((line, index) => {
+    if (!line.trim()) {
+      closeList();
+      closeTable();
+      return;
+    }
+
+    // Chart placeholder
+    if (line.includes('[CHART:') && includeCharts && chartData) {
+      const chartType = line.match(/\[CHART:(\w+)\]/)?.[1];
+      if (chartType === 'ACCESS_BY_LOCATION') {
+        html.push('<div class="chart-container my-6" style="width: 100%; height: 300px; background: #f8fafc; border-radius: 8px; padding: 20px; border: 1px solid #e2e8f0;">');
+        html.push('<h4 style="margin-bottom: 16px; font-weight: 600;">การเข้าใช้งานตามสถานที่</h4>');
+        html.push('<div style="font-size: 14px; color: #64748b;">กราฟแท่งแสดงการกระจายการเข้าใช้งาน</div>');
+        html.push('</div>');
+      } else if (chartType === 'SUCCESS_RATE') {
+        html.push('<div class="chart-container my-6" style="width: 100%; height: 300px; background: #f8fafc; border-radius: 8px; padding: 20px; border: 1px solid #e2e8f0;">');
+        html.push('<h4 style="margin-bottom: 16px; font-weight: 600;">อัตราความสำเร็จ</h4>');
+        html.push('<div style="font-size: 14px; color: #64748b;">กราฟวงกลมแสดงสัดส่วนการอนุมัติ/ปฏิเสธ</div>');
+        html.push('</div>');
+      }
+      return;
+    }
+
+    if (line.startsWith('### ')) {
+      closeList();
+      closeTable();
+      html.push(`<h3 class="text-lg font-semibold text-slate-800 mb-3 mt-4">${line.substring(4)}</h3>`);
+      return;
+    }
+
+    if (line.startsWith('## ')) {
+      closeList();
+      closeTable();
+      html.push(`<h2 class="text-xl font-semibold text-slate-800 mt-6 mb-4 pb-2 border-b border-slate-200">${line.substring(3)}</h2>`);
+      return;
+    }
+
+    if (line.startsWith('# ')) {
+      closeList();
+      closeTable();
+      html.push(`<h1 class="text-2xl font-bold text-slate-900 mb-6">${line.substring(2)}</h1>`);
+      return;
+    }
+
+    if (line.startsWith('- ')) {
+      closeTable();
+      if (!inList) {
+        inList = true;
+        html.push('<ul class="list-disc pl-5 space-y-2 mb-4">');
+      }
+      html.push(`<li class="text-slate-700">${line.substring(2)}</li>`);
+      return;
+    }
+
+    // Table handling
+    if (line.includes('|')) {
+      closeList();
+      if (line.includes('---')) {
+        if (!inTable) {
+          inTable = true;
+          html.push('<div class="overflow-x-auto my-4"><table class="min-w-full border-collapse border border-slate-300"><thead class="bg-slate-50">');
+        }
+        return;
+      } else {
+        if (!inTable) {
+          inTable = true;
+          html.push('<div class="overflow-x-auto my-4"><table class="min-w-full border-collapse border border-slate-300"><thead class="bg-slate-50">');
+        }
+        const cells = line.split('|').filter(cell => cell.trim());
+        const isHeader = html[html.length - 1].includes('<thead');
+        const cellTag = isHeader ? 'th' : 'td';
+        const cellClass = isHeader ? 'border border-slate-300 px-4 py-2 text-left font-semibold' : 'border border-slate-300 px-4 py-2 text-sm';
+        const row = cells.map(cell => `<${cellTag} class="${cellClass}">${cell.trim()}</${cellTag}>`).join('');
+
+        if (isHeader) {
+          html.push(`<tr>${row}</tr>`);
+          html.push('</thead><tbody>');
+        } else {
+          html.push(`<tr>${row}</tr>`);
+        }
         return;
       }
-      try {
-        const response = await fetch(`${modelInfo.url}/api/tags`, {
-          method: 'GET',
-          signal: AbortSignal.timeout(3000)
-        });
+    }
 
-        if (response.ok) {
-          const data = await response.json();
-          const hasModel = data.models?.some(model => model.name === modelInfo.name);
-          setConnectionStatus(hasModel ? 'connected' : 'model-missing');
-        } else {
-          setConnectionStatus('error');
-        }
-      } catch (error) {
-        setConnectionStatus('error');
+    closeList();
+    closeTable();
+
+    const formatted = line
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    html.push(`<p class="mb-3 text-slate-700">${formatted}</p>`);
+  });
+
+  closeList();
+  closeTable();
+
+  return html.join('\n');
+};
+
+const ChartComponent = ({ type, data, title }) => {
+  if (type === 'bar' && data) {
+    return (
+      <div className="bg-white p-4 rounded-lg border mb-4">
+        <h4 className="font-semibold mb-3">{title}</h4>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="count" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (type === 'pie' && data) {
+    return (
+      <div className="bg-white p-4 rounded-lg border mb-4">
+        <h4 className="font-semibold mb-3">{title}</h4>
+        <ResponsiveContainer width="100%" height={200}>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={80}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            >
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
+  const [selectedStyle, setSelectedStyle] = useState('business_concise');
+  const [selectedLayout, setSelectedLayout] = useState('standard');
+  const [reportContent, setReportContent] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(null);
+  const [exportFormat, setExportFormat] = useState('md');
+  const [viewMode, setViewMode] = useState('split');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showCharts, setShowCharts] = useState(true);
+
+  const editorRef = useRef(null);
+  const previewHtml = useMemo(() => convertMarkdownToHtml(reportContent, showCharts, chartData), [reportContent, showCharts, chartData]);
+
+  // Normalize real data for charts
+  const locationChartData = useMemo(() => {
+    const arr = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
+    return arr.map((d) => ({ name: d.name || d.location || '-', count: d.count ?? d.value ?? 0 }));
+  }, [chartData]);
+
+  const successPieData = useMemo(() => {
+    const total = Number(stats?.totalAccess ?? 0);
+    const success = Number(stats?.successfulAccess ?? 0);
+    const denied = Number(stats?.deniedAccess ?? 0);
+    if (!total && !success && !denied) {
+      const arr = Array.isArray(chartData?.successRateData) ? chartData.successRateData : [];
+      return arr.map((d) => ({ name: d.name || d.label || '-', value: d.value ?? d.count ?? 0 }));
+    }
+    return [
+      { name: 'อนุมัติ', value: success },
+      { name: 'ปฏิเสธ', value: denied },
+    ];
+  }, [stats, chartData]);
+
+  const wordCount = useMemo(() => {
+    const text = reportContent.trim();
+    return text ? text.split(/\s+/).length : 0;
+  }, [reportContent]);
+
+  const format = (n) => Number(n ?? 0).toLocaleString('th-TH');
+
+  const buildReportByStyleLayout = () => {
+    const total = Number(stats?.totalAccess ?? 0);
+    const success = Number(stats?.successfulAccess ?? 0);
+    const denied = Number(stats?.deniedAccess ?? 0);
+    const unique = Number(stats?.uniqueUsers ?? 0);
+    const sr = total ? ((success/total)*100).toFixed(1) : '-';
+    const dr = total ? ((denied/total)*100).toFixed(1) : '-';
+    const loc = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
+    const locRows = [...loc]
+      .map(i => ({ name: i.name || i.location || '-', count: i.count || i.value || 0 }))
+      .sort((a,b)=>b.count-a.count)
+      .map(r => `| ${r.name} | ${format(r.count)} |`).join('\n');
+
+    const styleText = {
+      business_concise: {
+        title: 'สรุป (เชิงธุรกิจ กระชับ)',
+        intro: `สรุปภาพรวมเพื่อการตัดสินใจอย่างรวดเร็ว`,
+        rec: `ข้อเสนอแนะเบื้องต้น: ทบทวนสิทธิ์ผู้ใช้งาน ตรวจพื้นที่ที่มีการปฏิเสธซ้ำ และติดตามช่วงเวลาหนาแน่น`
+      },
+      formal: {
+        title: 'บทสรุป (ทางการ)',
+        intro: `รายงานฉบับนี้จัดทำเพื่อสรุปสถานะการเข้าใช้งานและสถิติสำคัญในช่วงเวลาที่ประเมิน`,
+        rec: `ข้อเสนอแนะ: จัดให้มีการทบทวนสิทธิ์ประจำรอบ ตรวจสอบรายการปฏิเสธ และวางมาตรการรองรับภาระงานช่วงพีค`
+      },
+      analytical: {
+        title: 'บทสรุป (เชิงวิเคราะห์)',
+        intro: `ชี้ให้เห็นแนวโน้ม ตัวเลขหลัก และประเด็นที่ควรเจาะลึกต่อไป`,
+        rec: `ประเด็นติดตาม: การเปลี่ยนแปลงอัตราปฏิเสธตามพื้นที่/ช่วงเวลา และผลลัพธ์หลังปรับสิทธิ์`
       }
+    }[selectedStyle] || styleText?.business_concise;
+
+    const summary = `## ${styleText.title}\n${styleText.intro}\n\n- การเข้าใช้ทั้งหมด: **${format(total)}** ครั้ง\n- ผู้ใช้ไม่ซ้ำ: **${format(unique)}** คน\n- อัตราสำเร็จ: **${sr}%** • ปฏิเสธ: **${dr}%**\n\n${styleText.rec}\n`;
+
+    const kpi = `## KPI\n\n| ตัวชี้วัด | จำนวน | สัดส่วน |\n|---|---:|---:|\n| การเข้าใช้ทั้งหมด | ${format(total)} | 100% |\n| อนุมัติ | ${format(success)} | ${sr}% |\n| ปฏิเสธ | ${format(denied)} | ${dr}% |\n`;
+
+    const byLocation = `## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n\n[CHART:ACCESS_BY_LOCATION]\n`;
+
+    const successRate = `## อัตราความสำเร็จ\n\n| สถานะ | จำนวน | สัดส่วน |\n|---|---:|---:|\n| อนุมัติ | ${format(success)} | ${sr}% |\n| ปฏิเสธ | ${format(denied)} | ${dr}% |\n| รวม | ${format(total)} | 100% |\n\n[CHART:SUCCESS_RATE]\n`;
+
+    const sectionsByLayout = {
+      standard: [summary, kpi, byLocation, successRate],
+      summary: [summary, successRate],
+      executive: [summary, kpi]
+    }[selectedLayout] || [summary, kpi, byLocation, successRate];
+
+    return ['# รายงานการใช้งาน Access Log', '', ...sectionsByLayout].join('\n');
+  };
+
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    setError(null);
+    try {
+      setReportContent(buildReportByStyleLayout());
+    } catch (err) {
+      setError('ไม่สามารถสร้างรายงานได้');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(reportContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      setError('คัดลอกไม่สำเร็จ');
+    }
+  };
+
+  const exportToPDF = () => {
+    const printWindow = window.open('', '_blank');
+    const htmlContent = convertMarkdownToHtml(reportContent, true, chartData);
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>รายงาน Access Log</title>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: 'Sarabun', Arial, sans-serif; margin: 40px; line-height: 1.6; }
+            h1 { color: #1e293b; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; }
+            h2 { color: #334155; margin-top: 30px; }
+            h3 { color: #475569; }
+            table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+            th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: 600; }
+            ul { padding-left: 25px; }
+            li { margin-bottom: 8px; }
+            .chart-container { page-break-inside: avoid; }
+            strong { font-weight: 600; }
+            @media print {
+              body { margin: 20px; }
+              .chart-container { border: 1px solid #e2e8f0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="border: none; color: #1e293b;">รายงานการวิเคราะห์การเข้าใช้งาน</h1>
+            <p style="color: #64748b;">สร้างเมื่อ ${new Date().toLocaleDateString('th-TH')}</p>
+          </div>
+          ${htmlContent}
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  };
+
+  const handleExport = () => {
+    if (exportFormat === 'pdf') {
+      exportToPDF();
+      return;
+    }
+
+    const filename = `report-${Date.now()}.${exportFormat}`;
+    let content = reportContent;
+    let mimeType = 'text/plain';
+
+    if (exportFormat === 'html') {
+      const hasLoc = reportContent.includes('[CHART:ACCESS_BY_LOCATION]');
+      const hasPie = reportContent.includes('[CHART:SUCCESS_RATE]');
+      const htmlBody = convertMarkdownToHtml(reportContent, false, null);
+      const locLabels = (locationChartData || []).map(d=>d.name.replace(/"/g,'\\"'));
+      const locCounts = (locationChartData || []).map(d=>d.count);
+      const pieLabels = (successPieData || []).map(d=>d.name.replace(/"/g,'\\"'));
+      const pieValues = (successPieData || []).map(d=>d.value);
+      content = `<!DOCTYPE html>
+<html>
+<head>
+  <title>รายงาน Access Log</title>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+    h1, h2, h3 { color: #1e293b; }
+    table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+    th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: left; }
+    th { background-color: #f1f5f9; }
+    .chart-wrap { margin: 16px auto; max-width: 560px; }
+    .chart-wrap h3 { margin: 0 0 8px 0; font-size: 16px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  ${htmlBody}
+  ${hasLoc ? '<div class="chart-wrap"><h3>การเข้าใช้งานตามสถานที่</h3><canvas id="locChart" height="200"></canvas></div>' : ''}
+  ${hasPie ? '<div class="chart-wrap"><h3>อัตราความสำเร็จ</h3><canvas id="pieChart" height="200"></canvas></div>' : ''}
+  <script>
+    (function(){
+      try {
+        ${hasLoc ? `
+        const locCtx = document.getElementById('locChart')?.getContext('2d');
+        if (locCtx) {
+          new Chart(locCtx, {
+            type: 'bar',
+            data: { labels: ${JSON.stringify(locLabels)}, datasets: [{ label: 'จำนวน', data: ${JSON.stringify(locCounts)}, backgroundColor: '#3B82F6' }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+          });
+        }
+        ` : ''}
+        ${hasPie ? `
+        const pieCtx = document.getElementById('pieChart')?.getContext('2d');
+        if (pieCtx) {
+          new Chart(pieCtx, {
+            type: 'pie',
+            data: { labels: ${JSON.stringify(pieLabels)}, datasets: [{ data: ${JSON.stringify(pieValues)}, backgroundColor: ['#10B981','#EF4444','#F59E0B','#3B82F6'] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+          });
+        }
+        ` : ''}
+      } catch (e) { console.error(e); }
+    })();
+  </script>
+</body>
+</html>`;
+      mimeType = 'text/html';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const insertTemplate = (template) => {
+    const total = Number(stats?.totalAccess ?? 0);
+    const success = Number(stats?.successfulAccess ?? 0);
+    const denied = Number(stats?.deniedAccess ?? 0);
+    const sr = total ? ((success/total)*100).toFixed(1) : '-';
+    const dr = total ? ((denied/total)*100).toFixed(1) : '-';
+    const loc = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
+    const locRows = [...loc]
+      .map(i => ({ name: i.name || i.location || '-', count: i.count || i.value || 0 }))
+      .sort((a,b)=>b.count-a.count)
+      .map(r => `| ${r.name} | ${r.count.toLocaleString('th-TH')} |`).join('\n');
+
+    const templates = {
+      summary: `\n## สรุป\n- การเข้าใช้ทั้งหมด: **${total.toLocaleString('th-TH')}** ครั้ง\n- อัตราสำเร็จ: **${sr}%** • ปฏิเสธ: **${dr}%**\n`,
+      kpi: `\n## KPI\n\n| ตัวชี้วัด | จำนวน | สัดส่วน |\n|---|---:|---:|\n| การเข้าใช้ทั้งหมด | ${total.toLocaleString('th-TH')} | 100% |\n| อนุมัติ | ${success.toLocaleString('th-TH')} | ${sr}% |\n| ปฏิเสธ | ${denied.toLocaleString('th-TH')} | ${dr}% |\n`,
+      chartBar: `\n## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n`,
+      chartPie: `\n## อัตราความสำเร็จ\n\n| สถานะ | จำนวน | สัดส่วน |\n|---|---:|---:|\n| อนุมัติ | ${success.toLocaleString('th-TH')} | ${sr}% |\n| ปฏิเสธ | ${denied.toLocaleString('th-TH')} | ${dr}% |\n| รวม | ${total.toLocaleString('th-TH')} | 100% |\n\n[CHART:SUCCESS_RATE]\n`
     };
 
-    checkConnection();
-  }, [modelInfo.url, modelInfo.name]);
-
-  // Clear error after 10 seconds
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => {
-        clearError();
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [error, clearError]);
-
-  // Enhanced connection status
-  const getConnectionStatusInfo = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return {
-          icon: <CheckCircle className="w-4 h-4" />,
-          text: 'เชื่อมต่อแล้ว',
-          detail: `โมเดล ${modelInfo.name || 'N/A'}`,
-          bgColor: 'bg-emerald-50',
-          textColor: 'text-emerald-700',
-          borderColor: 'border-emerald-200',
-          dotColor: 'bg-emerald-400'
-        };
-      case 'model-missing':
-        return {
-          icon: <AlertCircle className="w-4 h-4" />,
-          text: 'ต้องติดตั้งโมเดล',
-          detail: `ยังไม่มี ${modelInfo.name || 'โมเดล'}`,
-          bgColor: 'bg-amber-50',
-          textColor: 'text-amber-700',
-          borderColor: 'border-amber-200',
-          dotColor: 'bg-amber-400'
-        };
-      case 'error':
-        return {
-          icon: <WifiOff className="w-4 h-4" />,
-          text: 'เชื่อมต่อไม่ได้',
-          detail: 'ตรวจสอบ Ollama',
-          bgColor: 'bg-red-50',
-          textColor: 'text-red-700',
-          borderColor: 'border-red-200',
-          dotColor: 'bg-red-400'
-        };
-      default:
-        return {
-          icon: <RefreshCw className="w-4 h-4 animate-spin" />,
-          text: 'กำลังตรวจสอบ',
-          detail: 'กรุณารอ...',
-          bgColor: 'bg-slate-50',
-          textColor: 'text-slate-600',
-          borderColor: 'border-slate-200',
-          dotColor: 'bg-slate-400'
-        };
-    }
-  };
-
-  const statusInfo = getConnectionStatusInfo();
-
-  // Setup commands for troubleshooting
-  const setupCommands = [
-    {
-      title: 'เริ่มต้น Ollama',
-      command: 'ollama serve',
-      description: 'เปิดเซิร์ฟเวอร์ AI',
-      icon: <Server className="w-5 h-5" />,
-      color: 'from-blue-500 to-cyan-500'
-    },
-    {
-      title: 'ดูรายการโมเดล',
-      command: 'ollama list',
-      description: 'ตรวจสอบโมเดลที่มี',
-      icon: <Database className="w-5 h-5" />,
-      color: 'from-purple-500 to-pink-500'
-    },
-    {
-      title: 'ติดตั้งโมเดลหลัก',
-      command: `ollama pull ${modelInfo.name || 'llama3.2:3b'}`,
-      description: `ดาวน์โหลด ${modelInfo.name || 'llama3.2:3b'}`,
-      icon: <Brain className="w-5 h-5" />,
-      color: 'from-green-500 to-emerald-500'
-    },
-    {
-      title: 'โมเดลเล็ก (แนะนำ)',
-      command: 'ollama pull llama3.2:1b',
-      description: 'โมเดลขนาดเล็ก เร็วกว่า',
-      icon: <Zap className="w-5 h-5" />,
-      color: 'from-orange-500 to-yellow-500'
-    }
-  ];
-
-  // Enhanced sample questions with better visuals
-  const sampleQuestions = [
-    {
-      text: 'วิเคราะห์สถิติการเข้าถึงรวมของระบบ',
-      icon: <BarChart3 className="w-5 h-5" />,
-      category: 'วิเคราะห์ข้อมูล',
-      color: 'from-blue-500 to-indigo-600',
-      bgColor: 'bg-blue-50'
-    },
-    {
-      text: 'ตรวจสอบพฤติกรรมการเข้าถึงที่ผิดปกติ',
-      icon: <Shield className="w-5 h-5" />,
-      category: 'ความปลอดภัย',
-      color: 'from-red-500 to-pink-600',
-      bgColor: 'bg-red-50'
-    },
-    {
-      text: 'แสดงแนวโน้มการเข้าถึงตามช่วงเวลา',
-      icon: <TrendingUp className="w-5 h-5" />,
-      category: 'แนวโน้ม',
-      color: 'from-green-500 to-emerald-600',
-      bgColor: 'bg-green-50'
-    },
-    {
-      text: 'สร้างรายงานสรุปสำหรับผู้บริหาร',
-      icon: <FileText className="w-5 h-5" />,
-      category: 'รายงาน',
-      color: 'from-purple-500 to-violet-600',
-      bgColor: 'bg-purple-50'
-    },
-    {
-      text: 'วิเคราะห์การใช้งานของแต่ละสถานที่',
-      icon: <Globe className="w-5 h-5" />,
-      category: 'ที่ตั้ง',
-      color: 'from-cyan-500 to-teal-600',
-      bgColor: 'bg-cyan-50'
-    },
-    {
-      text: 'ตรวจสอบการเข้าถึงนอกเวลาทำการ',
-      icon: <Clock className="w-5 h-5" />,
-      category: 'เวลาทำงาน',
-      color: 'from-orange-500 to-amber-600',
-      bgColor: 'bg-orange-50'
-    }
-  ];
-
-  const handleModelChange = (event) => {
-    setOllamaModel(event.target.value);
-  };
-
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      setSelectedFile(file);
-      clearError();
-    } else {
-      setSelectedFile(null);
-    }
-  };
-
-  const handleFileUpload = async () => {
-    if (!selectedFile) return;
-
-    setIsUploadingFile(true);
-    try {
-      const response = await aiService.uploadFileForAI(selectedFile);
-      if (response.success) {
-        setFileContext(response.fileContent);
-        setSelectedFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        handleSendMessage(`ฉันได้อัปโหลดไฟล์ชื่อ "${selectedFile.name}" เรียบร้อยแล้ว คุณสามารถถามคำถามเกี่ยวกับข้อมูลในไฟล์นี้ได้เลย`);
-      } else {
-        clearError(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์: ${response.message}`);
-      }
-    } catch (err) {
-      clearError(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์: ${err.message}`);
-    } finally {
-      setIsUploadingFile(false);
-    }
-  };
-
-  // Enhanced send message with file support
-  const handleEnhancedSendMessage = (message) => {
-    if (selectedFile && !isUploadingFile) {
-      handleFileUpload();
-    } else {
-      handleSendMessage(message);
-    }
+    setReportContent(prev => prev + (templates[template] || ''));
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      {/* Enhanced Modern Header */}
-      <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/60 shadow-lg">
-        <div className="px-6 py-4">
-          {/* Brand Section */}
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex items-center gap-4">
-              {/* Enhanced Brand Logo */}
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/25">
-                    <MessageSquare className="w-6 h-6 text-white" />
-                  </div>
-                  <div className={`absolute -top-1 -right-1 w-4 h-4 ${statusInfo.dotColor} rounded-full border-2 border-white shadow-md animate-pulse`}></div>
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-                    AI Assistant
-                  </h1>
-                  <p className="text-sm text-slate-500 flex items-center gap-2">
-                    <Shield className="w-3 h-3" />
-                    <span>ปลอดภัย</span>
-                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                    <Zap className="w-3 h-3" />
-                    <span>รวดเร็ว</span>
-                    <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                    <Activity className="w-3 h-3" />
-                    <span>ออฟไลน์</span>
-                  </p>
-                </div>
+    <div className="h-screen bg-slate-50 flex overflow-hidden">
+      {/* Sidebar */}
+      <div className={`bg-white border-r transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-0'}`}>
+        {sidebarOpen && (
+          <div className="h-full flex flex-col">
+            {/* Sidebar Header */}
+            <div className="p-4 border-b flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4 text-slate-600" />
+                <span className="font-medium">ตั้งค่า</span>
               </div>
-
-              {/* Enhanced Status Badge */}
-              <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border ${statusInfo.bgColor} ${statusInfo.textColor} ${statusInfo.borderColor} shadow-md`}>
-                {statusInfo.icon}
-                <div>
-                  <div className="font-semibold text-sm">{statusInfo.text}</div>
-                  <div className="text-xs opacity-80">{statusInfo.detail}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Enhanced Control Panel */}
-            <div className="flex items-center gap-3">
-              {/* Model Selector */}
-              {modelInfo.availableModels && modelInfo.availableModels.length > 0 && (
-                <div className="relative">
-                  <select
-                    value={modelInfo.name || ''}
-                    onChange={handleModelChange}
-                    disabled={isLoading || connectionStatus === 'error' || isUploadingFile}
-                    className="appearance-none bg-white border border-slate-300 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {modelInfo.availableModels.map((modelName) => (
-                      <option key={modelName} value={modelName}>
-                        {modelName}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <button
-                onClick={testOllamaConnection}
-                disabled={isLoading || isUploadingFile}
-                className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span className="hidden sm:inline">ทดสอบ</span>
-              </button>
-
-              <button
-                onClick={clearMessages}
-                className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-red-50 hover:border-red-300 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all shadow-sm"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span className="hidden sm:inline">เคลียร์</span>
+              <button onClick={() => setSidebarOpen(false)} className="p-1 hover:bg-slate-100 rounded">
+                <ChevronLeft className="w-4 h-4" />
               </button>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Enhanced Error States */}
-      {connectionStatus === 'error' && (
-        <div className="mx-6 mt-4">
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-3xl p-6 shadow-lg">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-red-100 rounded-2xl">
-                <WifiOff className="w-6 h-6 text-red-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-red-800 mb-2">
-                  ไม่สามารถเชื่อมต่อได้
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {/* Style */}
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  สไตล์
                 </h3>
-                <p className="text-red-700 mb-4">
-                  ตรวจสอบว่า Ollama Server ทำงานที่
-                  <code className="bg-red-100 px-2 py-1 rounded mx-1 font-mono text-sm">
-                    {modelInfo.url}
-                  </code>
-                </p>
-
-                <details className="group">
-                  <summary className="cursor-pointer flex items-center gap-2 text-red-800 hover:text-red-900 font-semibold mb-4">
-                    <Settings className="w-5 h-5" />
-                    <span>วิธีแก้ไข</span>
-                    <ChevronDown className="w-4 h-4 group-open:rotate-180 transition-transform" />
-                  </summary>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {setupCommands.map((cmd, index) => (
-                      <div key={index} className="bg-white/80 p-5 rounded-2xl border border-red-100 shadow-sm hover:shadow-md transition-all">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-10 h-10 bg-gradient-to-r ${cmd.color} rounded-xl flex items-center justify-center text-white shadow-md`}>
-                            {cmd.icon}
-                          </div>
-                          <div className="font-semibold text-slate-800">{cmd.title}</div>
-                        </div>
-                        <code className="block bg-slate-900 text-green-400 p-3 rounded-xl font-mono text-sm border overflow-x-auto">
-                          {cmd.command}
-                        </code>
-                        <div className="text-sm text-slate-600 mt-2">{cmd.description}</div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {connectionStatus === 'model-missing' && (
-        <div className="mx-6 mt-4">
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-6 shadow-lg">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-amber-100 rounded-2xl">
-                <AlertCircle className="w-6 h-6 text-amber-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-amber-800 mb-2">
-                  เกือบพร้อมแล้ว!
-                </h3>
-                <p className="text-amber-700 mb-4">
-                  เหลือแค่ติดตั้งโมเดล <strong>{modelInfo.name || 'โมเดล'}</strong> เท่านั้น
-                </p>
-                <div className="bg-white/80 p-4 rounded-2xl border border-amber-100">
-                  <div className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                    <Brain className="w-4 h-4" />
-                    รันคำสั่งนี้:
-                  </div>
-                  <code className="block bg-slate-900 text-green-400 p-3 rounded-xl font-mono text-sm">
-                    ollama pull {modelInfo.name || 'llama3.2:3b'}
-                  </code>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="mx-6 mt-4">
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-2xl p-4 shadow-md">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-              <div className="flex-1">
-                <p className="text-red-700 font-medium">{error}</p>
-              </div>
-              <button
-                onClick={clearError}
-                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Messages Container */}
-      <div
-        ref={chatContainerRef}
-        className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
-      >
-        {messages.length === 1 ? (
-          // Enhanced Welcome Screen
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center max-w-6xl">
-              {/* Hero Section */}
-              <div className="mb-12">
-                <div className="relative mb-8">
-                  <div className="w-32 h-32 bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-700 rounded-3xl flex items-center justify-center mx-auto shadow-2xl shadow-blue-500/30">
-                    <MessageSquare className="w-16 h-16 text-white" />
-                  </div>
-                  <div className="absolute -top-2 -right-2 w-8 h-8 bg-green-400 rounded-full border-4 border-white shadow-lg flex items-center justify-center">
-                    <CheckCircle className="w-4 h-4 text-white" />
-                  </div>
-                </div>
-
-                <h2 className="text-5xl font-bold bg-gradient-to-r from-slate-900 via-blue-800 to-indigo-800 bg-clip-text text-transparent mb-6">
-                  ยินดีต้อนรับสู่ AI Assistant
-                </h2>
-                <p className="text-xl text-slate-600 mb-8 leading-relaxed max-w-2xl mx-auto">
-                  ผู้ช่วย AI ที่ทำงานบนเครื่องคุณ พร้อมช่วยวิเคราะห์ข้อมูลอย่างปลอดภัยและเป็นส่วนตัว
-                </p>
-
-                {/* Enhanced System Info Cards */}
-                <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-8 mb-12 border border-slate-200 shadow-xl">
-                  <div className="flex items-center justify-center gap-3 mb-8">
-                    <Settings className="w-6 h-6 text-slate-600" />
-                    <h3 className="text-2xl font-bold text-slate-800">ข้อมูลระบบ</h3>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100 hover:shadow-lg transition-all">
-                      <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
-                        <Brain className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="font-bold text-slate-800 mb-1">โมเดล AI</div>
-                      <div className="text-sm text-slate-600 font-mono bg-blue-100 px-2 py-1 rounded">{modelInfo.name || 'ไม่ระบุ'}</div>
-                    </div>
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-100 hover:shadow-lg transition-all">
-                      <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
-                        <Server className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="font-bold text-slate-800 mb-1">เซิร์ฟเวอร์</div>
-                      <div className="text-sm text-slate-600 font-mono bg-green-100 px-2 py-1 rounded">{(modelInfo.url || '').replace('http://', '') || 'ไม่ระบุ'}</div>
-                    </div>
-                    <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-6 rounded-2xl border border-orange-100 hover:shadow-lg transition-all">
-                      <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-amber-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
-                        <Clock className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="font-bold text-slate-800 mb-1">Timeout</div>
-                      <div className="text-sm text-slate-600 bg-orange-100 px-2 py-1 rounded">{(modelInfo.timeout || 30000) / 1000} วินาที</div>
-                    </div>
-                    <div className="bg-gradient-to-br from-purple-50 to-violet-50 p-6 rounded-2xl border border-purple-100 hover:shadow-lg transition-all">
-                      <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-violet-600 rounded-xl flex items-center justify-center mb-4 mx-auto shadow-md">
-                        <Activity className="w-6 h-6 text-white" />
-                      </div>
-                      <div className="font-bold text-slate-800 mb-1">Debug</div>
-                      <div className="text-sm text-slate-600 bg-purple-100 px-2 py-1 rounded">{modelInfo.debug ? 'เปิด' : 'ปิด'}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Enhanced Sample Questions */}
-              <div className="space-y-8">
-                <div className="flex items-center justify-center gap-3 mb-8">
-                  <Sparkles className="w-7 h-7 text-indigo-600" />
-                  <h3 className="text-3xl font-bold text-slate-800">ลองถามคำถามเหล่านี้ดู!</h3>
-                  <Sparkles className="w-7 h-7 text-indigo-600" />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {sampleQuestions.map((question, index) => (
+                <div className="space-y-2">
+                  {stylePresets.map((preset) => (
                     <button
-                      key={index}
-                      onClick={() => handleSendMessage(question.text)}
-                      disabled={isLoading || connectionStatus === 'error'}
-                      className="group text-left p-6 bg-white/90 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-3xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-2xl transform hover:-translate-y-3 backdrop-blur-sm"
+                      key={preset.value}
+                      onClick={() => setSelectedStyle(preset.value)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${selectedStyle === preset.value
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                        }`}
                     >
-                      <div className="flex flex-col gap-4">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-14 h-14 bg-gradient-to-r ${question.color} rounded-2xl flex items-center justify-center text-white shadow-lg group-hover:shadow-xl transition-all group-hover:scale-110`}>
-                            {question.icon}
-                          </div>
-                          <div className="flex-1">
-                            <div className={`text-xs font-bold text-slate-600 ${question.bgColor} px-3 py-1.5 rounded-full inline-block mb-2`}>
-                              {question.category}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="font-bold text-slate-900 mb-3 leading-snug group-hover:text-indigo-700 transition-colors text-lg">
-                            {question.text}
-                          </div>
-                          <div className="flex items-center text-sm text-slate-500 group-hover:text-indigo-600 transition-colors font-medium">
-                            <span>คลิกเพื่อส่งคำถาม</span>
-                            <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                          </div>
-                        </div>
-                      </div>
+                      <span className="text-lg">{preset.icon}</span>
+                      <span className="text-sm font-medium">{preset.label}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Enhanced Quick Setup for Error State */}
-              {connectionStatus === 'error' && (
-                <div className="mt-12 p-8 bg-gradient-to-r from-slate-50 to-blue-50 rounded-3xl border border-slate-200 shadow-xl">
-                  <div className="flex items-center justify-center gap-3 mb-8">
-                    <Settings className="w-7 h-7 text-slate-600" />
-                    <h4 className="text-3xl font-bold text-slate-800">ติดตั้งง่ายๆ ใน 4 ขั้นตอน</h4>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {setupCommands.map((cmd, index) => (
-                      <div key={index} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-lg hover:shadow-xl transition-all text-center group">
-                        <div className={`w-16 h-16 bg-gradient-to-r ${cmd.color} rounded-2xl flex items-center justify-center mx-auto mb-4 text-white shadow-lg group-hover:shadow-xl transition-all group-hover:scale-110`}>
-                          {cmd.icon}
-                        </div>
-                        <div className="font-bold text-slate-800 mb-3 text-lg">{cmd.title}</div>
-                        <code className="text-xs bg-slate-900 text-green-400 p-3 rounded-xl block border font-mono overflow-x-auto mb-3">
-                          {cmd.command}
-                        </code>
-                        <div className="text-sm text-slate-600">{cmd.description}</div>
-                      </div>
-                    ))}
-                  </div>
+              {/* Layout */}
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  โครง
+                </h3>
+                <div className="space-y-2">
+                  {layoutPresets.map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => setSelectedLayout(preset.value)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${selectedLayout === preset.value
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                    >
+                      <span className="text-lg">{preset.icon}</span>
+                      <span className="text-sm font-medium">{preset.label}</span>
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
+
+              {/* Quick Templates */}
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  เทมเพลต
+                </h3>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => insertTemplate('summary')}
+                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                  >
+                    <span>📋</span> สรุป
+                  </button>
+                  <button
+                    onClick={() => insertTemplate('kpi')}
+                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                  >
+                    <span>📊</span> KPI
+                  </button>
+                  <button
+                    onClick={() => insertTemplate('chartBar')}
+                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                  >
+                    <span>📊</span> กราฟแท่ง
+                  </button>
+                  <button
+                    onClick={() => insertTemplate('chartPie')}
+                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                  >
+                    <span>🥧</span> กราฟวงกลม
+                  </button>
+                </div>
+              </div>
+
+              {/* Chart Options */}
+              <div>
+                <label className="flex items-center gap-2 p-2">
+                  <input
+                    type="checkbox"
+                    checked={showCharts}
+                    onChange={(e) => setShowCharts(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-sm">แสดงกราฟในพรีวิว</span>
+                </label>
+              </div>
+
+              {/* Stats */}
+              <div className="bg-slate-50 rounded-lg p-3">
+                <div className="text-xs text-slate-600 space-y-1">
+                  <div>📄 {uploadStats?.fileName}</div>
+                  <div>📝 {wordCount} คำ</div>
+                  <div>👥 {stats?.uniqueUsers?.toLocaleString()} คน</div>
+                </div>
+              </div>
             </div>
           </div>
-        ) : (
-          // Messages list
-          <>
-            {messages.map((message) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                isLoading={false}
-              />
-            ))}
-
-            {/* Loading message for AI response */}
-            {isLoading && (
-              <ChatMessage
-                message={{
-                  id: 'loading',
-                  type: 'ai',
-                  content: '',
-                  timestamp: new Date()
-                }}
-                isLoading={true}
-              />
-            )}
-
-            {/* Scroll anchor */}
-            <div ref={messagesEndRef} />
-          </>
         )}
       </div>
 
-      {/* Enhanced Chat Input with File Upload */}
-      <div className="bg-white/95 backdrop-blur-xl border-t border-slate-200/60 px-6 py-4 shadow-lg">
-        {/* File Upload Indicator */}
-        {selectedFile && (
-          <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl shadow-md">
-                <FileText className="w-5 h-5 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-semibold text-slate-700 truncate">
-                  📎 {selectedFile.name}
-                </div>
-                <div className="text-xs text-slate-500">
-                  ขนาด: {(selectedFile.size / 1024).toFixed(1)} KB • พร้อมอัปโหลด
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-                }}
-                className="p-2 rounded-xl hover:bg-red-100 transition-colors group"
-                title="ลบไฟล์ที่เลือก"
-              >
-                <XCircle className="w-5 h-5 text-slate-400 group-hover:text-red-500" />
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Header */}
+        <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {!sidebarOpen && (
+              <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <Settings className="w-5 h-5" />
               </button>
+            )}
+            <div>
+              <h1 className="text-lg font-semibold">รายงาน Access Log</h1>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              className="h-9 rounded-lg border px-3 bg-white text-sm"
+            >
+              <option value="split">แยก</option>
+              <option value="preview">พรีวิว</option>
+              <option value="editor">แก้ไข</option>
+            </select>
+
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="h-9 rounded-lg border px-3 bg-white text-sm"
+            >
+              <option value="md">MD</option>
+              <option value="html">HTML</option>
+              <option value="pdf">PDF</option>
+            </select>
+
+            <button onClick={handleCopy} className="p-2 hover:bg-slate-100 rounded-lg" title="คัดลอก">
+              {copied ? <CheckCircle className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+            </button>
+
+            <button onClick={handleExport} className="p-2 hover:bg-slate-100 rounded-lg" title="ส่งออก">
+              <FileDown className="w-5 h-5" />
+            </button>
+
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {isGenerating ? 'สร้าง...' : 'สร้าง'}
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <span className="text-sm text-red-700">{error}</span>
           </div>
         )}
 
-        {/* Chat Input with File Controls */}
-        <div className="flex items-end gap-3">
-          {/* File Upload Button */}
-          <label htmlFor="file-upload-ai" className="cursor-pointer group">
-            <div className="p-3 bg-gradient-to-r from-slate-100 to-slate-200 hover:from-blue-100 hover:to-indigo-100 border border-slate-300 hover:border-blue-300 rounded-2xl transition-all shadow-sm hover:shadow-md group-hover:scale-105">
-              <Upload className="w-6 h-6 text-slate-600 group-hover:text-blue-600 transition-colors" />
+        {/* Editor */}
+        <div className="flex-1 bg-white min-h-0">
+          {viewMode === 'split' && (
+            <div className="h-full min-h-0 grid grid-cols-2">
+              <textarea
+                ref={editorRef}
+                value={reportContent}
+                onChange={(e) => setReportContent(e.target.value)}
+                placeholder="กด 'สร้าง' เพื่อเริ่มต้น หรือใช้เทมเพลตกราฟจาก Sidebar"
+                className="w-full h-full resize-none border-r border-slate-200 p-4 text-sm font-mono focus:outline-none"
+              />
+              <div className="h-full min-h-0 overflow-auto p-4 bg-slate-50">
+                <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                {showCharts && reportContent.includes('[CHART:ACCESS_BY_LOCATION]') && (
+                  <ChartComponent
+                    type="bar"
+                    data={locationChartData}
+                    title="การเข้าใช้งานตามสถานที่"
+                  />
+                )}
+                {showCharts && reportContent.includes('[CHART:SUCCESS_RATE]') && (
+                  <ChartComponent
+                    type="pie"
+                    data={successPieData}
+                    title="อัตราความสำเร็จ"
+                  />
+                )}
+              </div>
             </div>
-            <input
-              id="file-upload-ai"
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              disabled={isLoading || isUploadingFile}
-              className="hidden"
-              accept=".csv,.xlsx,.xls,.txt"
-            />
-          </label>
-
-          {/* Enhanced Chat Input */}
-          <div className="flex-1">
-            <ChatInput
-              onSendMessage={handleEnhancedSendMessage}
-              isLoading={isLoading || isUploadingFile}
-              disabled={connectionStatus === 'error'}
-              placeholder={
-                selectedFile
-                  ? `พิมพ์คำถามเกี่ยวกับไฟล์ ${selectedFile.name}...`
-                  : "พิมพ์คำถามของคุณที่นี่..."
-              }
-            />
-          </div>
-
-          {/* Upload File Button (when file is selected) */}
-          {selectedFile && (
-            <button
-              onClick={handleFileUpload}
-              disabled={!selectedFile || isLoading || isUploadingFile}
-              className="p-3 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl shadow-lg hover:shadow-xl transition-all hover:scale-105"
-              title="อัปโหลดไฟล์"
-            >
-              {isUploadingFile ? (
-                <RefreshCw className="w-6 h-6 animate-spin" />
-              ) : (
-                <Upload className="w-6 h-6" />
-              )}
-            </button>
           )}
-        </div>
 
-        {/* Enhanced Tips */}
-        <div className="mt-4 text-center">
-          <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-slate-100 px-4 py-2 rounded-full">
-            <Sparkles className="w-3 h-3" />
-            <span>💡 ลองพิมพ์ "ช่วย" เพื่อดูคำสั่งทั้งหมด หรือ "สถิติ" เพื่อดูข้อมูลภาพรวม</span>
-          </div>
-        </div>
-      </div>
+          {viewMode === 'editor' && (
+            <textarea
+              ref={editorRef}
+              value={reportContent}
+              onChange={(e) => setReportContent(e.target.value)}
+              placeholder="กด 'สร้าง' เพื่อเริ่มต้น หรือใช้เทมเพลตกราฟจาก Sidebar"
+              className="w-full h-full resize-none p-4 text-sm font-mono focus:outline-none"
+            />
+          )}
 
-      {/* Enhanced Footer */}
-      <div className="bg-gradient-to-r from-slate-50 via-blue-50 to-indigo-50 border-t border-slate-200/60 px-6 py-4 backdrop-blur-sm">
-        <div className="flex items-center justify-center gap-6 text-sm text-slate-600">
-          <div className="flex items-center gap-2 font-semibold">
-            <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
-              <MessageSquare className="w-3 h-3 text-white" />
+          {viewMode === 'preview' && (
+            <div className="h-full min-h-0 overflow-auto p-4 bg-slate-50">
+              <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              {showCharts && reportContent.includes('[CHART:ACCESS_BY_LOCATION]') && (
+                <ChartComponent
+                  type="bar"
+                  data={locationChartData}
+                  title="การเข้าใช้งานตามสถานที่"
+                />
+              )}
+              {showCharts && reportContent.includes('[CHART:SUCCESS_RATE]') && (
+                <ChartComponent
+                  type="pie"
+                  data={successPieData}
+                  title="อัตราความสำเร็จ"
+                />
+              )}
             </div>
-            <span>Ollama AI</span>
-          </div>
-
-          <div className="flex items-center gap-2 text-emerald-600 font-medium">
-            <Shield className="w-4 h-4" />
-            <span>ปลอดภัย 100%</span>
-          </div>
-
-          <div className="flex items-center gap-2 text-blue-600 font-medium">
-            <Zap className="w-4 h-4" />
-            <span>ประมวลผลเร็ว</span>
-          </div>
-
-          <div className="flex items-center gap-2 text-purple-600 font-medium">
-            <Database className="w-4 h-4" />
-            <span>ทำงานออฟไลน์</span>
-          </div>
-
-          <a
-            href="https://ollama.ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 transition-colors font-medium hover:underline"
-          >
-            <Info className="w-4 h-4" />
-            <span>เรียนรู้เพิ่ม</span>
-            <ArrowRight className="w-3 h-3" />
-          </a>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-export default ChatPage;
+export default ReportAssistant;

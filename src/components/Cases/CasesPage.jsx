@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import aiService from '../../services/aiService'; // Adjust path as needed
 
 const CasesPage = () => {
   const [caseList, setCaseList] = useState([]);
@@ -86,8 +87,9 @@ const CasesPage = () => {
   };
 
   // Improved CSV export for real-world use (Thai/Excel-friendly)
-  const exportCaseCSV = () => {
+  const exportCaseCSV = async () => {
     if (!result.rows || result.rows.length === 0) return;
+
     const metaTitle = caseList.find(c => c.id === result.id)?.title || 'รายงานเคส';
     const priority = ['Date Time','dateTime','Card Name','cardName','Location','location','Reason','reason','Allow','allow','Direction','direction','Door','door','Device','device','User Type','userType','Transaction ID','id'];
     const keys = new Set();
@@ -128,30 +130,76 @@ const CasesPage = () => {
       'Transaction ID':'รหัสธุรกรรม', 'id':'รหัสธุรกรรม'
     })[key] || key;
 
-    const meta = [
-      ['รายงาน', metaTitle],
-      ['รหัสเคส', result.id],
-      ['สร้างเมื่อ', new Date().toLocaleString('th-TH')],
-      ['จำนวนระเบียน', result.count],
-      [],
-      ['คำอธิบาย', 'รายงานนี้จัดทำเพื่อการตรวจสอบความปลอดภัยของการเข้า–ออกระบบ'],
-      [],
+    // --- Data Analysis for AI Service ---
+    let allowedCount = 0;
+    let deniedCount = 0;
+    const reasonCounts = {};
+    const locationCounts = {};
+
+    (result.rows || []).forEach(r => {
+      const allowStatus = normalizeVal('Allow', r['Allow'] || r['allow']);
+      if (allowStatus === 'สำเร็จ') {
+        allowedCount++;
+      } else if (allowStatus === 'ปฏิเสธ') {
+        deniedCount++;
+      }
+
+      const reason = r['Reason'] || r['reason'];
+      if (reason) {
+        reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      }
+
+      const location = r['Location'] || r['location'];
+      if (location) {
+        locationCounts[location] = (locationCounts[location] || 0) + 1;
+      }
+    });
+
+    const totalRecords = result.count;
+    const deniedPercentage = totalRecords > 0 ? ((deniedCount / totalRecords) * 100).toFixed(2) : 0;
+
+    const mostCommonReason = Object.entries(reasonCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'ไม่ระบุ';
+    const mostCommonLocation = Object.entries(locationCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'ไม่ระบุ';
+
+    // Prepare stats for AI service
+    const reportStats = {
+      totalAccess: totalRecords,
+      successfulAccess: allowedCount,
+      deniedAccess: deniedCount,
+      overview: {
+        totalAccess: totalRecords,
+        successfulAccess: allowedCount,
+        deniedAccess: deniedCount,
+      },
+      summary: {
+        mostCommonReason: mostCommonReason,
+        mostCommonLocation: mostCommonLocation,
+      }
+    };
+
+    // Call AI service to generate report markdown
+    const aiReport = await aiService.generateReport({
+      stats: reportStats,
+      style: 'analytical', // Choose a style that fits "real report"
+      layout: 'executive' // Choose a layout that fits "real report"
+    });
+
+    const aiReportMarkdown = aiReport.markdown;
+
+    // Now, embed this markdown into CSV.
+    // The entire markdown report will be placed in a dedicated section of the CSV.
+    const reportContentForCSV = [
+      ['--- AI Generated Security Report ---'],
+      [aiReportMarkdown], // The entire markdown report in one cell
+      ['--- End AI Generated Security Report ---'],
+      [], // Blank line
     ].map(r => r.map(esc).join(',')).join('\r\n');
 
     const headerLine = selectedKeys.map(k => esc(displayName(k))).join(',');
-    const normalizeVal = (k, v) => {
-      if (k==='Allow' || k==='allow') {
-        if (v===true || v==='t' || v==='true' || v===1) return 'สำเร็จ';
-        if (v===false || v==='f' || v==='false' || v===0) return 'ปฏิเสธ';
-      }
-      if (k==='Direction' || k==='direction') {
-        if ((v||'').toString().toUpperCase()==='IN') return 'เข้า';
-        if ((v||'').toString().toUpperCase()==='OUT') return 'ออก';
-      }
-      return v;
-    };
+    // The normalizeVal function is already defined above, no need to redefine.
     const body = (result.rows || []).map(r => selectedKeys.map(h => esc(normalizeVal(h, r[h]))).join(',')).join('\r\n');
-    const csv = `\uFEFF${meta}\r\n${headerLine}\r\n${body}`;
+
+    const csv = `\uFEFF${reportContentForCSV}\r\n${headerLine}\r\n${body}`;
 
     const download = async () => {
       const base = metaTitle.replace(/[^\u0E00-\u0E7Fa-zA-Z0-9_\- ]/g, '').replace(/\s+/g,'_');

@@ -8,7 +8,7 @@ const SidebarNav = ({ activeTab, setActiveTab, collapsed = false, onToggle }) =>
     { id: 'dashboard', label: 'แดชบอร์ด & วิเคราะห์', icon: BarChart3, description: 'ภาพรวม, สถิติ และการวิเคราะห์เชิงลึก' },
     { id: 'pivot', label: 'Pivot (Beta)', icon: Grid, description: 'ตาราง Pivot แบบ Power BI' },
     { id: 'cases', label: 'รายงานเคส', icon: FileText, description: 'รายงานแยกตามเคส พร้อมส่งออก' },
-    { id: 'chat', label: 'Chat กับ AI', icon: MessageSquare, description: 'สอบถามข้อมูลกับ AI' },
+    { id: 'chat', label: 'รายงาน', icon: MessageSquare, description: 'สร้างและส่งออกรายงาน Markdown' },
   ];
 
   const handleClick = (id) => {
