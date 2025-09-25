@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload,
   AlertCircle,
@@ -24,22 +24,22 @@ import {
   Info
 } from 'lucide-react';
 
-const StatCard = ({ icon, label, value, color = 'blue', trend = null, size = 'normal' }) => {
-  const sizeClasses = size === 'large' ? 'p-6' : 'p-4';
-  const iconClasses = size === 'large' ? 'w-6 h-6' : 'w-5 h-5';
-  const valueClasses = size === 'large' ? 'text-2xl' : 'text-lg';
+const StatCard = ({ icon, label, value, color = 'blue', trend = null, size = 'normal', compact = false }) => {
+  const sizeClasses = size === 'large' ? 'p-6' : (compact ? 'p-3' : 'p-4');
+  const iconClasses = size === 'large' ? 'w-6 h-6' : (compact ? 'w-4 h-4' : 'w-5 h-5');
+  const valueClasses = size === 'large' ? 'text-2xl' : (compact ? 'text-base' : 'text-lg');
 
   return (
-    <div className="group relative overflow-hidden bg-white rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all duration-300">
-      <div className={`${sizeClasses}`}>
+    <div className="group relative overflow-hidden bg-white rounded-xl border border-blue-100/60 ring-1 ring-blue-50 shadow-sm hover:shadow-md transition-all duration-300">
+      <div className={`${sizeClasses} bg-gradient-to-br from-white to-blue-50/30`}> 
         <div className="flex items-center gap-3">
-          <div className={`p-3 rounded-lg bg-${color}-50 group-hover:scale-105 transition-transform duration-200`}>
+          <div className={`p-3 rounded-lg bg-${color}-50/70 ring-1 ring-${color}-100 group-hover:scale-105 transition-transform duration-200`}>
             {React.cloneElement(icon, { className: `${iconClasses} text-${color}-600` })}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-500 font-medium mb-1">{label}</p>
             <div className="flex items-center gap-2">
-              <p className={`${valueClasses} font-bold text-gray-900 truncate`}>{value}</p>
+              <p className={`${valueClasses} font-bold text-gray-900 whitespace-nowrap min-w-[72px]`}>{value}</p>
               {trend && (
                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${trend > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                   }`}>
@@ -50,7 +50,7 @@ const StatCard = ({ icon, label, value, color = 'blue', trend = null, size = 'no
           </div>
         </div>
       </div>
-      <div className={`absolute bottom-0 left-0 h-1 bg-${color}-400 transition-all duration-300 w-0 group-hover:w-full`}></div>
+      <div className={`absolute bottom-0 left-0 h-1 bg-${color}-400/70 transition-all duration-300 w-0 group-hover:w-full`}></div>
     </div>
   );
 };
@@ -87,7 +87,7 @@ const ProgressIndicator = ({ progress, stage }) => (
   </div>
 );
 
-const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
+const FilePreview = ({ file, onRemove, preview, isAnalyzing, inModal = false }) => (
   <div className="space-y-6">
     {/* File Info Card */}
     <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
@@ -98,7 +98,7 @@ const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></div>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-gray-800 text-base truncate">{file.name}</p>
+            <p className="font-semibold text-gray-800 text-base break-words">{file.name}</p>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-sm text-gray-600">
                 {(file.size / (1024 * 1024)).toFixed(2)} MB
@@ -134,51 +134,55 @@ const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
     {preview && (
       <div className="space-y-4">
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className={`${inModal ? 'grid grid-cols-2 md:grid-cols-4 gap-3' : 'grid grid-cols-2 md:grid-cols-4 gap-4'}`}>
           <StatCard
             icon={<Database />}
             label="จำนวนแถว"
             value={new Intl.NumberFormat('th-TH').format(preview.totalRows)}
             color="blue"
+            compact={inModal}
           />
           <StatCard
             icon={<BarChart3 />}
             label="คอลัมน์"
             value={preview.columns.length}
             color="green"
+            compact={inModal}
           />
           <StatCard
             icon={<Clock />}
             label="เวลาประมาณ"
             value={preview.estimatedTime}
             color="purple"
+            compact={inModal}
           />
           <StatCard
             icon={<TrendingUp />}
             label="คุณภาพ"
             value={preview.quality}
             color={preview.quality === 'ดีเยี่ยม' ? 'green' : 'blue'}
+            compact={inModal}
           />
         </div>
 
         {/* Column Preview */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="bg-white border border-blue-100 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-semibold text-gray-800 flex items-center gap-2">
               <Database className="w-4 h-4 text-blue-600" />
               คอลัมน์ที่พบ ({preview.columns.length})
             </h4>
           </div>
-          <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto">
-            {preview.columns.slice(0, 8).map((col, idx) => (
-              <span key={idx} className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 px-2 py-1 rounded-md text-xs font-medium">
+          <div className={`flex flex-wrap gap-2 ${inModal ? 'max-h-56' : 'max-h-20'} overflow-y-auto pr-1`}> 
+            {preview.columns.slice(0, inModal ? 30 : 8).map((col, idx) => (
+              <span key={idx} title={col} className={`inline-flex items-center gap-1 bg-blue-50 text-blue-800 ${inModal ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-1 text-xs'} rounded-md font-medium ring-1 ring-blue-100 break-words`}>
                 <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
                 {col}
               </span>
             ))}
-            {preview.columns.length > 8 && (
+            {preview.columns.length > (inModal ? 30 : 8) && (
               <span className="text-xs text-gray-500 px-2 py-1">
-                +{preview.columns.length - 8} คอลัมน์
+                +{preview.columns.length - (inModal ? 30 : 8)} คอลัมน์
               </span>
             )}
           </div>
@@ -186,16 +190,17 @@ const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
 
         {/* Sample Data */}
         {preview.sampleData && preview.sampleData.length > 0 && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <h4 className="font-semibold text-gray-800 flex items-center gap-2 mb-3">
-              <Eye className="w-4 h-4 text-green-600" />
-              ตัวอย่างข้อมูล
-            </h4>
-            <div className="bg-gray-900 rounded-lg p-3 text-sm font-mono max-h-32 overflow-y-auto">
+          <div className="bg-white border border-blue-100 rounded-xl p-0 overflow-hidden shadow-sm">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-blue-100 bg-gradient-to-r from-blue-50/60 to-white">
+              <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                <Eye className="w-4 h-4 text-green-600" /> ตัวอย่างข้อมูล
+              </h4>
+            </div>
+            <div className={`bg-gray-900 ${inModal ? 'p-2 text-xs max-h-72' : 'p-3 text-sm max-h-32'} font-mono overflow-y-auto shadow-inner`}> 
               {Object.entries(preview.sampleData[0]).slice(0, 4).map(([key, value]) => (
                 <div key={key} className="flex items-start gap-2 mb-1">
-                  <span className="text-cyan-400 font-medium w-20 truncate flex-shrink-0">{key}:</span>
-                  <span className="text-green-300 truncate">
+                  <span className={`${inModal ? 'w-24' : 'w-20'} text-cyan-400 font-medium truncate flex-shrink-0`}>{key}:</span>
+                  <span className="text-green-300 break-all">
                     {value !== null && value !== undefined ? value.toString() : 'null'}
                   </span>
                 </div>
@@ -206,15 +211,15 @@ const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
 
         {/* Issues */}
         {preview.issues && preview.issues.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 ring-1 ring-amber-100">
             <h4 className="font-semibold text-amber-800 flex items-center gap-2 mb-3">
               <AlertCircle className="w-4 h-4" />
               ข้อควรระวัง
             </h4>
             <div className="space-y-2">
               {preview.issues.map((issue, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-sm text-amber-700">
-                  <div className="w-1 h-1 bg-amber-500 rounded-full mt-2 flex-shrink-0"></div>
+                <div key={idx} className="flex items-start gap-2 text-sm text-amber-800">
+                  <div className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-2 flex-shrink-0"></div>
                   <span>{issue}</span>
                 </div>
               ))}
@@ -226,7 +231,7 @@ const FilePreview = ({ file, onRemove, preview, isAnalyzing }) => (
   </div>
 );
 
-const UploadPage = () => {
+const UploadPage = ({ onFocusChange, inModal = false }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileError, setFileError] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -238,6 +243,17 @@ const UploadPage = () => {
   const [uploadStats, setUploadStats] = useState(null);
   const [lastUpload, setLastUpload] = useState(null);
   const [showTips, setShowTips] = useState(false);
+  const previewScrollRef = useRef(null);
+
+  // Notify layout to enter focus (full-width) when a file is selected
+  useEffect(() => {
+    if (!onFocusChange) return;
+    onFocusChange(!!selectedFile);
+    return () => {
+      // on unmount, reset focus
+      onFocusChange(false);
+    };
+  }, [selectedFile, onFocusChange]);
 
   const resetState = () => {
     setSelectedFile(null);
@@ -493,8 +509,8 @@ const UploadPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-blue-50 p-3 md:p-4">
-      <div className="max-w-5xl mx-auto space-y-4">
+    <div className={`${inModal ? '' : 'min-h-screen bg-blue-50 p-3 md:p-4'}`}>
+      <div className={`${inModal ? '' : 'max-w-5xl mx-auto'} space-y-4`}>
         {/* Compact Header */}
         <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-2">
           <div className="flex items-center gap-2">
@@ -579,7 +595,7 @@ const UploadPage = () => {
 
             {/* File Preview */}
             {selectedFile && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className={`${inModal ? 'grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}`}>
                 <div className="border-2 border-dashed rounded-lg p-4 text-center border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-colors">
                   <div className="mb-2 text-sm font-medium text-gray-700">เลือกไฟล์ใหม่</div>
                   <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileSelection} className="hidden" id="file-reupload" />
@@ -589,8 +605,8 @@ const UploadPage = () => {
                   <div className="mt-2 text-xs text-gray-500">รองรับ .csv .xlsx .xls</div>
                 </div>
 
-                <div className="space-y-4">
-                  <FilePreview file={selectedFile} preview={filePreview} isAnalyzing={isAnalyzing} onRemove={resetState} />
+                <div ref={previewScrollRef} className={`${inModal ? 'relative space-y-4 max-h-[60vh] md:max-h-[70vh] overflow-y-auto pr-1' : 'space-y-4'}`}>
+                  <FilePreview file={selectedFile} preview={filePreview} isAnalyzing={isAnalyzing} onRemove={resetState} inModal={inModal} />
 
                   {filePreview && !isUploading && !uploadComplete && (
                     <div className="text-center space-y-2">
@@ -626,6 +642,17 @@ const UploadPage = () => {
                         </button>
                       </div>
                     </div>
+                  )}
+                  {inModal && (
+                    <button
+                      type="button"
+                      onClick={() => previewScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                      className="hidden md:inline-flex items-center justify-center h-9 w-9 rounded-full bg-blue-600 text-white shadow-lg ring-1 ring-blue-300 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-transform hover:scale-105 fixed right-6 bottom-6"
+                      aria-label="ไปบนสุด"
+                      title="ไปบนสุด"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M5 15l7-7 7 7"/></svg>
+                    </button>
                   )}
                 </div>
               </div>

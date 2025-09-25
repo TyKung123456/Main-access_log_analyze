@@ -28,6 +28,7 @@ const AccessLogAnalyzer = () => {
   const [selectedLogEntry, setSelectedLogEntry] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
 
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
@@ -258,6 +259,7 @@ const AccessLogAnalyzer = () => {
           onFileUpload={handleFileUpload}
           logDataCount={logData.length}
           uploadError={uploadError}
+          onFocusChange={(v) => setFocusMode(!!v)}
         />
       ),
       chat: (
@@ -341,7 +343,7 @@ const AccessLogAnalyzer = () => {
   };
 
   return (
-    <div className="min-h-screen bg-blue-50">
+    <div className={`min-h-screen bg-blue-50 ${focusMode ? 'overflow-hidden' : ''}`}>
       <Header pageTitle={getPageTitle().title} pageSubtitle={getPageTitle().subtitle} />
 
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -349,20 +351,22 @@ const AccessLogAnalyzer = () => {
         {isLoading && <LoadingOverlay />}
 
         <div className="flex">
-          <div
-            className={`transition-[width,margin] duration-300 ease-out overflow-hidden ${sidebarCollapsed ? 'w-0 mr-0' : 'w-64 mr-6'} sticky top-[92px] sm:top-[84px] h-[calc(100vh-92px)] sm:h-[calc(100vh-84px)]`}
-            style={{ willChange: 'width, margin' }}
-          >
-            {!sidebarCollapsed && (
-              <SidebarNav
-                activeTab={activeTab}
-                setActiveTab={handleTabChange}
-                collapsed={false}
-                onToggle={() => setSidebarCollapsed(true)}
-              />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
+          {!focusMode && (
+            <div
+              className={`transition-[width,margin] duration-300 ease-out overflow-hidden ${sidebarCollapsed ? 'w-0 mr-0' : 'w-64 mr-6'} sticky top-[92px] sm:top-[84px] h-[calc(100vh-92px)] sm:h-[calc(100vh-84px)]`}
+              style={{ willChange: 'width, margin' }}
+            >
+              {!sidebarCollapsed && (
+                <SidebarNav
+                  activeTab={activeTab}
+                  setActiveTab={handleTabChange}
+                  collapsed={false}
+                  onToggle={() => setSidebarCollapsed(true)}
+                />
+              )}
+            </div>
+          )}
+          <div className={`flex-1 min-w-0 ${focusMode ? 'max-w-full' : ''}`}>
             <div className="mb-4 flex items-center justify-end">
               <SystemStatus />
             </div>
@@ -373,7 +377,7 @@ const AccessLogAnalyzer = () => {
         </div>
 
         {/* Floating open button when sidebar hidden */}
-        {sidebarCollapsed && (
+        {sidebarCollapsed && !focusMode && (
           <button
             onClick={() => setSidebarCollapsed(false)}
             className="fixed left-3 top-[92px] sm:top-[84px] z-[70] inline-flex items-center justify-center h-10 w-10 rounded-full bg-blue-200 text-blue-900 shadow-md ring-1 ring-blue-300 hover:bg-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-transform hover:scale-105"
@@ -398,20 +402,21 @@ const AccessLogAnalyzer = () => {
       {/* Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowUploadModal(false)}>
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[95vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <h3 className="font-semibold text-gray-900">อัปโหลดไฟล์ Access Log</h3>
               <button onClick={() => setShowUploadModal(false)} className="text-gray-500 hover:text-gray-700">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="p-4 overflow-y-auto max-h-[70vh]">
+            <div className="p-4 overflow-y-auto max-h-[80vh]">
               <UploadPage
                 isUploading={isUploading}
                 uploadProgress={uploadProgress}
                 onFileUpload={handleFileUpload}
                 logDataCount={logData.length}
                 uploadError={uploadError}
+                inModal
               />
             </div>
             <div className="px-4 py-3 border-t flex justify-end bg-gray-50">

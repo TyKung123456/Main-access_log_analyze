@@ -337,7 +337,14 @@ const CasesPage = () => {
               <div ref={resultsRef} className="overflow-auto border rounded max-h-[calc(100vh-10rem)]">
                 <div className="sticky top-0 z-10 bg-white/90 backdrop-blur px-3 py-2 border-b flex items-center justify-between">
                   <div className="text-sm text-gray-700">ผลลัพธ์: {result.count.toLocaleString('th-TH')} แถว</div>
-                  <button onClick={()=>resultsRef.current && (resultsRef.current.scrollTop=0)} className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50">ไปบนสุด</button>
+                  <button
+                    onClick={()=>resultsRef.current && (resultsRef.current.scrollTop=0)}
+                    className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-white/70 text-blue-700 ring-1 ring-blue-200 hover:bg-blue-50 hover:ring-blue-300 shadow-sm transition-colors"
+                    aria-label="ไปบนสุด"
+                    title="ไปบนสุด"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M5 15l7-7 7 7"/></svg>
+                  </button>
                 </div>
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-50">
