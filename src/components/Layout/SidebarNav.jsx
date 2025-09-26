@@ -4,11 +4,10 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '../ui/
 
 const SidebarNav = ({ activeTab, setActiveTab, collapsed = false, onToggle }) => {
   const tabs = [
-    { id: 'logs', label: 'ประวัติการใช้งาน', icon: Table, description: 'Transaction Log แบบตาราง' },
+    { id: 'logs', label: 'Transaction Log', icon: Table, description: 'Transaction Log แบบตาราง' },
     { id: 'dashboard', label: 'แดชบอร์ด & วิเคราะห์', icon: BarChart3, description: 'ภาพรวม, สถิติ และการวิเคราะห์เชิงลึก' },
-    { id: 'pivot', label: 'Pivot (Beta)', icon: Grid, description: 'ตาราง Pivot แบบ Power BI' },
-    { id: 'cases', label: 'รายงานเคส', icon: FileText, description: 'รายงานแยกตามเคส พร้อมส่งออก' },
-    { id: 'chat', label: 'รายงาน', icon: MessageSquare, description: 'สร้างและส่งออกรายงาน Markdown' },
+    { id: 'cases', label: 'รายงานเหตุการณ์ (เคส)', icon: FileText, description: 'รายงานแยกตามเหตุการณ์/เคส พร้อมส่งออก' },
+    { id: 'chat', label: 'สร้างรายงาน (AI)', icon: MessageSquare, description: 'สร้างรายงานสรุปด้วย AI และส่งออก' },
   ];
 
   const handleClick = (id) => {

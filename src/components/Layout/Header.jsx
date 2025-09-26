@@ -9,7 +9,7 @@ const Header = ({ pageTitle = '', pageSubtitle = '' }) => {
   const logoHeight = Number(import.meta.env.VITE_BRAND_LOGO_HEIGHT) || 56; // px
   return (
     <header className="sticky top-0 z-50 bg-gradient-to-r from-blue-200 to-blue-100 border-b border-blue-300/70 shadow-sm">
-      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-3 sm:py-4 grid grid-cols-3 items-center">
+      <div className="w-full px-3 sm:px-4 lg:px-6 py-3 sm:py-4 grid grid-cols-3 items-center">
         {/* Left: app title */}
         <div className="justify-self-start">
           <h1 className="text-2xl md:text-3xl font-extrabold text-blue-900 tracking-tight flex items-center gap-3">

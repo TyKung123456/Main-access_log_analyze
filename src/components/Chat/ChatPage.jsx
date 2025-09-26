@@ -19,17 +19,37 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import aiService from '../../services/aiService'; // Adjust path as needed
 
 const stylePresets = [
-  { value: 'business_concise', label: 'ธุรกิจ', icon: '💼' },
-  { value: 'formal', label: 'ทางการ', icon: '📋' },
-  { value: 'analytical', label: 'วิเคราะห์', icon: '📊' }
+  { value: 'business_concise', label: 'ธุรกิจ', icon: '💼', description: 'กระชับ เน้นสาระสำคัญ' },
+  { value: 'formal', label: 'ทางการ', icon: '📋', description: 'เป็นทางการ ครบถ้วน' },
+  { value: 'analytical', label: 'วิเคราะห์', icon: '📊', description: 'เชิงลึก มีข้อมูลสนับสนุน' },
+  { value: 'narrative', label: 'เล่าเรื่อง', icon: '📖', description: 'บรรยายเป็นเรื่องราว' },
+  { value: 'technical', label: 'เทคนิค', icon: '⚙️', description: 'รายละเอียดทางเทคนิค' }
 ];
 
 const layoutPresets = [
-  { value: 'standard', label: 'มาตรฐาน', icon: '📄' },
-  { value: 'summary', label: 'แบบย่อ', icon: '📝' },
-  { value: 'executive', label: 'ผู้บริหาร', icon: '👔' }
+  { value: 'standard', label: 'มาตรฐาน', icon: '📄', description: 'โครงสร้างครบถ้วน' },
+  { value: 'summary', label: 'แบบย่อ', icon: '📝', description: 'สรุปสั้น ได้ใจความ' },
+  { value: 'executive', label: 'ผู้บริหาร', icon: '👔', description: 'สำหรับการตัดสินใจ' },
+  { value: 'dashboard', label: 'แดชบอร์ด', icon: '📊', description: 'เน้นตัวเลขและกราฟ' },
+  { value: 'detailed', label: 'รายละเอียด', icon: '📋', description: 'ครอบคลุมทุกมิติ' }
+];
+
+const toneOptions = [
+  { value: 'professional', label: 'มืออาชีพ', icon: '🎯' },
+  { value: 'formal', label: 'เป็นทางการ', icon: '📜' },
+  { value: 'casual', label: 'สบายๆ', icon: '😊' },
+  { value: 'urgent', label: 'เร่งด่วน', icon: '🚨' },
+  { value: 'conversational', label: 'สนทนา', icon: '💬' }
+];
+
+const depthOptions = [
+  { value: 'shallow', label: 'ภาพรวม', description: 'สรุปสั้น' },
+  { value: 'medium', label: 'ปานกลาง', description: 'สมดุล' },
+  { value: 'deep', label: 'เชิงลึก', description: 'วิเคราะห์ละเอียด' },
+  { value: 'comprehensive', label: 'ครอบคลุม', description: 'ทุกมิติ' }
 ];
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
@@ -207,6 +227,8 @@ const ChartComponent = ({ type, data, title }) => {
 const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
   const [selectedStyle, setSelectedStyle] = useState('business_concise');
   const [selectedLayout, setSelectedLayout] = useState('standard');
+  const [selectedTone, setSelectedTone] = useState('professional');
+  const [selectedDepth, setSelectedDepth] = useState('medium');
   const [reportContent, setReportContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -215,6 +237,12 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
   const [viewMode, setViewMode] = useState('split');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showCharts, setShowCharts] = useState(true);
+
+  // AI Advanced Options
+  const [includeRecommendations, setIncludeRecommendations] = useState(true);
+  const [includeRiskAssessment, setIncludeRiskAssessment] = useState(true);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [language, setLanguage] = useState('thai');
 
   const editorRef = useRef(null);
   const previewHtml = useMemo(() => convertMarkdownToHtml(reportContent, showCharts, chartData), [reportContent, showCharts, chartData]);
@@ -246,61 +274,204 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
 
   const format = (n) => Number(n ?? 0).toLocaleString('th-TH');
 
-  const buildReportByStyleLayout = () => {
+  // Generate comprehensive data analysis for AI
+  const generateDataAnalysis = (data) => {
     const total = Number(stats?.totalAccess ?? 0);
     const success = Number(stats?.successfulAccess ?? 0);
     const denied = Number(stats?.deniedAccess ?? 0);
     const unique = Number(stats?.uniqueUsers ?? 0);
-    const sr = total ? ((success/total)*100).toFixed(1) : '-';
-    const dr = total ? ((denied/total)*100).toFixed(1) : '-';
+    const successRate = total > 0 ? ((success / total) * 100) : 0;
+    const deniedRate = total > 0 ? ((denied / total) * 100) : 0;
+
+    // Process location data
+    const locations = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
+    const locationStats = locations.map(loc => ({
+      name: loc.name || loc.location || 'ไม่ระบุ',
+      count: loc.count || loc.value || 0
+    })).sort((a, b) => b.count - a.count);
+
+    const mostActiveLocation = locationStats[0]?.name || 'ไม่ระบุ';
+    const locationDistribution = locationStats.reduce((acc, loc) => {
+      acc[loc.name] = loc.count;
+      return acc;
+    }, {});
+
+    return {
+      totalAccess: total,
+      successfulAccess: success,
+      deniedAccess: denied,
+      uniqueUsers: unique,
+      successRate: parseFloat(successRate.toFixed(2)),
+      deniedRate: parseFloat(deniedRate.toFixed(2)),
+      overview: {
+        totalAccess: total,
+        successfulAccess: success,
+        deniedAccess: denied,
+        successRate,
+        deniedRate
+      },
+      summary: {
+        mostActiveLocation,
+        locationCount: locationStats.length,
+        averageAccessPerLocation: locationStats.length > 0 ? Math.round(total / locationStats.length) : 0
+      },
+      breakdowns: {
+        locations: locationDistribution,
+        locationStats: locationStats
+      }
+    };
+  };
+
+  // AI Report Generation with Real Service Integration
+  const generateAIReport = async () => {
+    if (!aiService || !aiService.generateReport) {
+      throw new Error('AI Service ไม่พร้อมใช้งาน กรุณาตรวจสอบการเชื่อมต่อ');
+    }
+
+    const analysis = generateDataAnalysis(stats);
+    const caseTitle = uploadStats?.fileName || 'รายงานการใช้งาน Access Log';
+
+    // Build comprehensive AI request
+    const aiRequest = {
+      stats: analysis,
+      style: selectedStyle,
+      layout: selectedLayout,
+      options: {
+        language: language,
+        tone: selectedTone,
+        depth: selectedDepth,
+        includeCharts: showCharts,
+        includeRecommendations: includeRecommendations,
+        includeRiskAssessment: includeRiskAssessment,
+        caseTitle: caseTitle,
+        customPrompt: customPrompt.trim() || undefined,
+        // Additional context
+        fileName: uploadStats?.fileName,
+        uploadDate: uploadStats?.uploadDate,
+        totalRecords: stats?.totalAccess || 0
+      },
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        generatedBy: 'ReportAssistant',
+        version: '2.0',
+        settings: {
+          style: selectedStyle,
+          layout: selectedLayout,
+          tone: selectedTone,
+          depth: selectedDepth
+        }
+      }
+    };
+
+    // Call the actual AI service
+    const aiReport = await aiService.generateReport(aiRequest);
+
+    if (!aiReport || !aiReport.markdown) {
+      throw new Error('AI ไม่สามารถสร้างรายงานได้ กรุณาลองใหม่อีกครั้ง');
+    }
+
+    return aiReport.markdown;
+  };
+
+  // Fallback report generation (if AI fails)
+  const buildFallbackReport = () => {
+    const total = Number(stats?.totalAccess ?? 0);
+    const success = Number(stats?.successfulAccess ?? 0);
+    const denied = Number(stats?.deniedAccess ?? 0);
+    const unique = Number(stats?.uniqueUsers ?? 0);
+    const sr = total > 0 ? ((success / total) * 100).toFixed(1) : '-';
+    const dr = total > 0 ? ((denied / total) * 100).toFixed(1) : '-';
     const loc = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
     const locRows = [...loc]
       .map(i => ({ name: i.name || i.location || '-', count: i.count || i.value || 0 }))
-      .sort((a,b)=>b.count-a.count)
+      .sort((a, b) => b.count - a.count)
       .map(r => `| ${r.name} | ${format(r.count)} |`).join('\n');
 
-    const styleText = {
-      business_concise: {
-        title: 'สรุป (เชิงธุรกิจ กระชับ)',
-        intro: `สรุปภาพรวมเพื่อการตัดสินใจอย่างรวดเร็ว`,
-        rec: `ข้อเสนอแนะเบื้องต้น: ทบทวนสิทธิ์ผู้ใช้งาน ตรวจพื้นที่ที่มีการปฏิเสธซ้ำ และติดตามช่วงเวลาหนาแน่น`
-      },
-      formal: {
-        title: 'บทสรุป (ทางการ)',
-        intro: `รายงานฉบับนี้จัดทำเพื่อสรุปสถานะการเข้าใช้งานและสถิติสำคัญในช่วงเวลาที่ประเมิน`,
-        rec: `ข้อเสนอแนะ: จัดให้มีการทบทวนสิทธิ์ประจำรอบ ตรวจสอบรายการปฏิเสธ และวางมาตรการรองรับภาระงานช่วงพีค`
-      },
-      analytical: {
-        title: 'บทสรุป (เชิงวิเคราะห์)',
-        intro: `ชี้ให้เห็นแนวโน้ม ตัวเลขหลัก และประเด็นที่ควรเจาะลึกต่อไป`,
-        rec: `ประเด็นติดตาม: การเปลี่ยนแปลงอัตราปฏิเสธตามพื้นที่/ช่วงเวลา และผลลัพธ์หลังปรับสิทธิ์`
-      }
-    }[selectedStyle] || styleText?.business_concise;
+    const currentStylePreset = stylePresets.find(s => s.value === selectedStyle) || stylePresets[0];
+    const currentToneOption = toneOptions.find(t => t.value === selectedTone) || toneOptions[0];
+    const currentDepthOption = depthOptions.find(d => d.value === selectedDepth) || depthOptions[1]; // medium
 
-    const summary = `## ${styleText.title}\n${styleText.intro}\n\n- การเข้าใช้ทั้งหมด: **${format(total)}** ครั้ง\n- ผู้ใช้ไม่ซ้ำ: **${format(unique)}** คน\n- อัตราสำเร็จ: **${sr}%** • ปฏิเสธ: **${dr}%**\n\n${styleText.rec}\n`;
+    let introText = currentStylePreset.description;
+    let recommendationText = currentStylePreset.rec;
+    let riskAssessmentText = '';
+
+    // Adjust intro/recommendations based on tone and depth
+    if (selectedTone === 'urgent') {
+      introText = `**ด่วน:** ${introText}`;
+      recommendationText = `**ดำเนินการทันที:** ${recommendationText}`;
+    } else if (selectedTone === 'casual') {
+      introText = `สวัสดี! นี่คือสรุปง่ายๆ: ${introText}`;
+    }
+
+    if (selectedDepth === 'deep' || selectedDepth === 'comprehensive') {
+      introText += ` (วิเคราะห์เชิงลึก)`;
+      recommendationText += ` (พร้อมรายละเอียดเพิ่มเติม)`;
+    } else if (selectedDepth === 'shallow') {
+      introText += ` (ภาพรวม)`;
+    }
+
+    if (includeRecommendations) {
+      recommendationText = `\n### ข้อเสนอแนะ\n${recommendationText}\n`;
+    } else {
+      recommendationText = '';
+    }
+
+    if (includeRiskAssessment) {
+      riskAssessmentText = `\n### การประเมินความเสี่ยง\n- ตรวจพบการเข้าถึงที่ถูกปฏิเสธ **${format(denied)}** ครั้ง (${dr}%). อาจบ่งชี้ถึงความพยายามในการเข้าถึงที่ไม่ได้รับอนุญาตหรือการกำหนดค่าสิทธิ์ที่ไม่ถูกต้อง\n- สถานที่ที่มีการเข้าถึงสูงสุด: **${loc[0]?.name || 'ไม่ระบุ'}** ควรตรวจสอบเป็นพิเศษ\n`;
+    } else {
+      riskAssessmentText = '';
+    }
+
+    const summary = `## ${currentStylePreset.label} - ${currentToneOption.label} (${currentDepthOption.label})\n${introText}\n\n- การเข้าใช้ทั้งหมด: **${format(total)}** ครั้ง\n- ผู้ใช้ไม่ซ้ำ: **${format(unique)}** คน\n- อัตราสำเร็จ: **${sr}%** • ปฏิเสธ: **${dr}%**\n${recommendationText}${riskAssessmentText}`;
 
     const kpi = `## KPI\n\n| ตัวชี้วัด | จำนวน | สัดส่วน |\n|---|---:|---:|\n| การเข้าใช้ทั้งหมด | ${format(total)} | 100% |\n| อนุมัติ | ${format(success)} | ${sr}% |\n| ปฏิเสธ | ${format(denied)} | ${dr}% |\n`;
 
-    const byLocation = `## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n\n[CHART:ACCESS_BY_LOCATION]\n`;
+    const byLocation = showCharts ? `## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n\n[CHART:ACCESS_BY_LOCATION]\n` : `## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n`;
 
-    const successRate = `## อัตราความสำเร็จ\n\n| สถานะ | จำนวน | สัดส่วน |\n|---|---:|---:|\n| อนุมัติ | ${format(success)} | ${sr}% |\n| ปฏิเสธ | ${format(denied)} | ${dr}% |\n| รวม | ${format(total)} | 100% |\n\n[CHART:SUCCESS_RATE]\n`;
+    const successRate = showCharts ? `## อัตราความสำเร็จ\n\n| สถานะ | จำนวน | สัดส่วน |\n|---|---:|---:|\n| อนุมัติ | ${format(success)} | ${sr}% |\n| ปฏิเสธ | ${format(denied)} | ${dr}% |\n| รวม | ${format(total)} | 100% |\n\n[CHART:SUCCESS_RATE]\n` : `## อัตราความสำเร็จ\n\n| สถานะ | จำนวน | สัดส่วน |\n|---|---:|---:|\n| อนุมัติ | ${format(success)} | ${sr}% |\n| ปฏิเสธ | ${format(denied)} | ${dr}% |\n| รวม | ${format(total)} | 100% |\n`;
 
     const sectionsByLayout = {
       standard: [summary, kpi, byLocation, successRate],
       summary: [summary, successRate],
-      executive: [summary, kpi]
+      executive: [summary, kpi],
+      dashboard: [kpi, byLocation, successRate],
+      detailed: [summary, kpi, byLocation, successRate]
     }[selectedLayout] || [summary, kpi, byLocation, successRate];
 
-    return ['# รายงานการใช้งาน Access Log', '', ...sectionsByLayout].join('\n');
+    return ['# รายงานการใช้งาน Access Log', '', `*สร้างเมื่อ: ${new Date().toLocaleString('th-TH')}*`, `*ไฟล์: ${uploadStats?.fileName || 'ไม่ระบุ'}*`, '', ...sectionsByLayout].join('\n');
   };
 
+  // Main generation handler with AI integration
   const handleGenerate = async () => {
     setIsGenerating(true);
     setError(null);
+
     try {
-      setReportContent(buildReportByStyleLayout());
+      console.log('เริ่มสร้างรายงานด้วย AI...', {
+        style: selectedStyle,
+        layout: selectedLayout,
+        tone: selectedTone,
+        depth: selectedDepth
+      });
+
+      // Try AI first
+      let report;
+      try {
+        report = await generateAIReport();
+        console.log('AI สร้างรายงานสำเร็จ');
+      } catch (aiError) {
+        console.warn('AI ล้มเหลว ใช้ fallback:', aiError.message);
+        setError(`AI ไม่พร้อมใช้งาน: ${aiError.message} - ใช้รูปแบบมาตรฐาน`);
+        report = buildFallbackReport();
+      }
+
+      setReportContent(report);
+
     } catch (err) {
-      setError('ไม่สามารถสร้างรายงานได้');
+      console.error('การสร้างรายงานล้มเหลว:', err);
+      setError(`ไม่สามารถสร้างรายงานได้: ${err.message}`);
+      // Last resort fallback
+      setReportContent(buildFallbackReport());
     } finally {
       setIsGenerating(false);
     }
@@ -348,6 +519,7 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
           <div style="text-align: center; margin-bottom: 30px;">
             <h1 style="border: none; color: #1e293b;">รายงานการวิเคราะห์การเข้าใช้งาน</h1>
             <p style="color: #64748b;">สร้างเมื่อ ${new Date().toLocaleDateString('th-TH')}</p>
+            <p style="color: #64748b;">สไตล์: ${stylePresets.find(s => s.value === selectedStyle)?.label} | โครง: ${layoutPresets.find(l => l.value === selectedLayout)?.label}</p>
           </div>
           ${htmlContent}
         </body>
@@ -374,30 +546,38 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
       const hasLoc = reportContent.includes('[CHART:ACCESS_BY_LOCATION]');
       const hasPie = reportContent.includes('[CHART:SUCCESS_RATE]');
       const htmlBody = convertMarkdownToHtml(reportContent, false, null);
-      const locLabels = (locationChartData || []).map(d=>d.name.replace(/"/g,'\\"'));
-      const locCounts = (locationChartData || []).map(d=>d.count);
-      const pieLabels = (successPieData || []).map(d=>d.name.replace(/"/g,'\\"'));
-      const pieValues = (successPieData || []).map(d=>d.value);
+      const locLabels = (locationChartData || []).map(d => d.name.replace(/"/g, '\\"'));
+      const locCounts = (locationChartData || []).map(d => d.count);
+      const pieLabels = (successPieData || []).map(d => d.name.replace(/"/g, '\\"'));
+      const pieValues = (successPieData || []).map(d => d.value);
       content = `<!DOCTYPE html>
 <html>
 <head>
   <title>รายงาน Access Log</title>
   <meta charset="utf-8">
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+    :root { --page-max: 960px; }
+    body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.6; color: #0f172a; }
+    .report-container { max-width: var(--page-max); margin: 0 auto; }
     h1, h2, h3 { color: #1e293b; }
     table { border-collapse: collapse; width: 100%; margin: 20px 0; }
     th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: left; }
     th { background-color: #f1f5f9; }
-    .chart-wrap { margin: 16px auto; max-width: 560px; }
-    .chart-wrap h3 { margin: 0 0 8px 0; font-size: 16px; }
+    img, svg, canvas { max-width: 100%; }
+    .chart-wrap { margin: 16px auto; max-width: 720px; }
+    .chart-wrap h3 { margin: 0 0 8px 0; font-size: 16px; color: #334155; }
+    .chart-wrap canvas { display: block; width: 100% !important; height: 280px !important; }
+    @media (min-width: 1200px) { .chart-wrap canvas { height: 320px !important; } }
+    @media (max-width: 480px) { .chart-wrap canvas { height: 220px !important; } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  ${htmlBody}
-  ${hasLoc ? '<div class="chart-wrap"><h3>การเข้าใช้งานตามสถานที่</h3><canvas id="locChart" height="200"></canvas></div>' : ''}
-  ${hasPie ? '<div class="chart-wrap"><h3>อัตราความสำเร็จ</h3><canvas id="pieChart" height="200"></canvas></div>' : ''}
+  <div class="report-container">
+    ${htmlBody}
+    ${hasLoc ? '<div class="chart-wrap"><h3>การเข้าใช้งานตามสถานที่</h3><canvas id="locChart"></canvas></div>' : ''}
+    ${hasPie ? '<div class="chart-wrap"><h3>อัตราความสำเร็จ</h3><canvas id="pieChart"></canvas></div>' : ''}
+  </div>
   <script>
     (function(){
       try {
@@ -442,18 +622,18 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
     const total = Number(stats?.totalAccess ?? 0);
     const success = Number(stats?.successfulAccess ?? 0);
     const denied = Number(stats?.deniedAccess ?? 0);
-    const sr = total ? ((success/total)*100).toFixed(1) : '-';
-    const dr = total ? ((denied/total)*100).toFixed(1) : '-';
+    const sr = total ? ((success / total) * 100).toFixed(1) : '-';
+    const dr = total ? ((denied / total) * 100).toFixed(1) : '-';
     const loc = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
     const locRows = [...loc]
       .map(i => ({ name: i.name || i.location || '-', count: i.count || i.value || 0 }))
-      .sort((a,b)=>b.count-a.count)
+      .sort((a, b) => b.count - a.count)
       .map(r => `| ${r.name} | ${r.count.toLocaleString('th-TH')} |`).join('\n');
 
     const templates = {
       summary: `\n## สรุป\n- การเข้าใช้ทั้งหมด: **${total.toLocaleString('th-TH')}** ครั้ง\n- อัตราสำเร็จ: **${sr}%** • ปฏิเสธ: **${dr}%**\n`,
       kpi: `\n## KPI\n\n| ตัวชี้วัด | จำนวน | สัดส่วน |\n|---|---:|---:|\n| การเข้าใช้ทั้งหมด | ${total.toLocaleString('th-TH')} | 100% |\n| อนุมัติ | ${success.toLocaleString('th-TH')} | ${sr}% |\n| ปฏิเสธ | ${denied.toLocaleString('th-TH')} | ${dr}% |\n`,
-      chartBar: `\n## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n`,
+      chartBar: `\n## การเข้าใช้งานตามสถานที่\n\n| สถานที่ | จำนวน |\n|---|---:|\n${locRows || '| - | - |'}\n\n[CHART:ACCESS_BY_LOCATION]\n`,
       chartPie: `\n## อัตราความสำเร็จ\n\n| สถานะ | จำนวน | สัดส่วน |\n|---|---:|---:|\n| อนุมัติ | ${success.toLocaleString('th-TH')} | ${sr}% |\n| ปฏิเสธ | ${denied.toLocaleString('th-TH')} | ${dr}% |\n| รวม | ${total.toLocaleString('th-TH')} | 100% |\n\n[CHART:SUCCESS_RATE]\n`
     };
 
@@ -463,14 +643,14 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
   return (
     <div className="h-screen bg-slate-50 flex overflow-hidden">
       {/* Sidebar */}
-      <div className={`bg-white border-r transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-0'}`}>
+      <div className={`bg-white border-r transition-all duration-200 ${sidebarOpen ? 'w-80' : 'w-0'}`}>
         {sidebarOpen && (
           <div className="h-full flex flex-col">
             {/* Sidebar Header */}
             <div className="p-4 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4 text-slate-600" />
-                <span className="font-medium">ตั้งค่า</span>
+                <Sparkles className="w-5 h-5 text-purple-600" />
+                <span className="font-medium">AI การตั้งค่า</span>
               </div>
               <button onClick={() => setSidebarOpen(false)} className="p-1 hover:bg-slate-100 rounded">
                 <ChevronLeft className="w-4 h-4" />
@@ -478,24 +658,38 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {/* AI Status */}
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-3 border border-purple-200">
+                <div className="flex items-center gap-2 text-sm font-medium text-purple-800">
+                  <Zap className="w-4 h-4" />
+                  AI Report Generator
+                </div>
+                <div className="text-xs text-purple-600 mt-1">
+                  เชื่อมต่อกับ aiService.generateReport()
+                </div>
+              </div>
+
               {/* Style */}
               <div>
                 <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                   <FileText className="w-4 h-4" />
-                  สไตล์
+                  สไตล์การเขียน
                 </h3>
                 <div className="space-y-2">
                   {stylePresets.map((preset) => (
                     <button
                       key={preset.value}
                       onClick={() => setSelectedStyle(preset.value)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${selectedStyle === preset.value
-                          ? 'border-blue-400 bg-blue-50'
-                          : 'border-slate-200 hover:border-slate-300'
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedStyle === preset.value
+                        ? 'border-purple-400 bg-purple-50'
+                        : 'border-slate-200 hover:border-slate-300'
                         }`}
                     >
-                      <span className="text-lg">{preset.icon}</span>
-                      <span className="text-sm font-medium">{preset.label}</span>
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-lg">{preset.icon}</span>
+                        <span className="text-sm font-medium">{preset.label}</span>
+                      </div>
+                      <div className="text-xs text-slate-500">{preset.description}</div>
                     </button>
                   ))}
                 </div>
@@ -505,78 +699,182 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
               <div>
                 <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                   <BarChart3 className="w-4 h-4" />
-                  โครง
+                  โครงสร้างรายงาน
                 </h3>
                 <div className="space-y-2">
                   {layoutPresets.map((preset) => (
                     <button
                       key={preset.value}
                       onClick={() => setSelectedLayout(preset.value)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${selectedLayout === preset.value
-                          ? 'border-blue-400 bg-blue-50'
-                          : 'border-slate-200 hover:border-slate-300'
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedLayout === preset.value
+                        ? 'border-blue-400 bg-blue-50'
+                        : 'border-slate-200 hover:border-slate-300'
                         }`}
                     >
-                      <span className="text-lg">{preset.icon}</span>
-                      <span className="text-sm font-medium">{preset.label}</span>
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-lg">{preset.icon}</span>
+                        <span className="text-sm font-medium">{preset.label}</span>
+                      </div>
+                      <div className="text-xs text-slate-500">{preset.description}</div>
                     </button>
                   ))}
                 </div>
               </div>
 
+              {/* Advanced AI Options */}
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  ตัวเลือกขั้นสูง
+                </h3>
+
+                {/* Tone */}
+                <div className="mb-4">
+                  <label className="block text-xs text-slate-600 mb-2">โทนการเขียน</label>
+                  <select
+                    value={selectedTone}
+                    onChange={(e) => setSelectedTone(e.target.value)}
+                    className="w-full text-sm border rounded px-3 py-2"
+                  >
+                    {toneOptions.map(tone => (
+                      <option key={tone.value} value={tone.value}>
+                        {tone.icon} {tone.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Depth */}
+                <div className="mb-4">
+                  <label className="block text-xs text-slate-600 mb-2">ความลึกการวิเคราะห์</label>
+                  <select
+                    value={selectedDepth}
+                    onChange={(e) => setSelectedDepth(e.target.value)}
+                    className="w-full text-sm border rounded px-3 py-2"
+                  >
+                    {depthOptions.map(depth => (
+                      <option key={depth.value} value={depth.value}>
+                        {depth.label} - {depth.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Language */}
+                <div className="mb-4">
+                  <label className="block text-xs text-slate-600 mb-2">ภาษา</label>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full text-sm border rounded px-3 py-2"
+                  >
+                    <option value="thai">ไทย</option>
+                    <option value="english">English</option>
+                    <option value="mixed">ไทย-English (ผสม)</option>
+                  </select>
+                </div>
+
+                {/* Content Options */}
+                <div className="space-y-3 mb-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={includeRecommendations}
+                      onChange={(e) => setIncludeRecommendations(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>💡 ข้อเสนอแนะและการปรับปรุง</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={includeRiskAssessment}
+                      onChange={(e) => setIncludeRiskAssessment(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>⚠️ การประเมินความเสี่ยง</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={showCharts}
+                      onChange={(e) => setShowCharts(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>📊 แสดงกราฟในรายงาน</span>
+                  </label>
+                </div>
+
+                {/* Custom Prompt */}
+                <div className="mb-4">
+                  <label className="block text-xs text-slate-600 mb-2">คำสั่งพิเศษ (Custom Prompt)</label>
+                  <textarea
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="เช่น: เปรียบเทียบกับเดือนที่แล้ว, เน้นประเด็นความปลอดภัย, แสดงแนวโน้มรายชั่วโมง..."
+                    className="w-full text-sm border rounded px-3 py-2 h-20 resize-none"
+                  />
+                  <div className="text-xs text-slate-500 mt-1">
+                    ระบุข้อกำหนดเพิ่มเติมที่ต้องการให้ AI วิเคราะห์
+                  </div>
+                </div>
+              </div>
+
               {/* Quick Templates */}
-              <div>
+              <div className="border-t pt-4">
                 <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                   <Plus className="w-4 h-4" />
-                  เทมเพลต
+                  เทมเพลตด่วน
                 </h3>
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => insertTemplate('summary')}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-sm"
                   >
                     <span>📋</span> สรุป
                   </button>
                   <button
                     onClick={() => insertTemplate('kpi')}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-sm"
                   >
                     <span>📊</span> KPI
                   </button>
                   <button
                     onClick={() => insertTemplate('chartBar')}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-sm"
                   >
-                    <span>📊</span> กราฟแท่ง
+                    <span>📈</span> กราฟแท่ง
                   </button>
                   <button
                     onClick={() => insertTemplate('chartPie')}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 text-sm"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 text-sm"
                   >
                     <span>🥧</span> กราฟวงกลม
                   </button>
                 </div>
               </div>
 
-              {/* Chart Options */}
-              <div>
-                <label className="flex items-center gap-2 p-2">
-                  <input
-                    type="checkbox"
-                    checked={showCharts}
-                    onChange={(e) => setShowCharts(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm">แสดงกราฟในพรีวิว</span>
-                </label>
-              </div>
-
               {/* Stats */}
-              <div className="bg-slate-50 rounded-lg p-3">
+              <div className="bg-slate-50 rounded-lg p-3 border-t">
                 <div className="text-xs text-slate-600 space-y-1">
-                  <div>📄 {uploadStats?.fileName}</div>
-                  <div>📝 {wordCount} คำ</div>
-                  <div>👥 {stats?.uniqueUsers?.toLocaleString()} คน</div>
+                  <div className="flex items-center justify-between">
+                    <span>📄 ไฟล์:</span>
+                    <span className="font-medium">{uploadStats?.fileName || 'ไม่ระบุ'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>📝 จำนวนคำ:</span>
+                    <span className="font-medium">{wordCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>👥 ผู้ใช้:</span>
+                    <span className="font-medium">{stats?.uniqueUsers?.toLocaleString('th-TH') || 0} คน</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>🔢 รายการ:</span>
+                    <span className="font-medium">{stats?.totalAccess?.toLocaleString('th-TH') || 0}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -595,7 +893,12 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
               </button>
             )}
             <div>
-              <h1 className="text-lg font-semibold">รายงาน Access Log</h1>
+              <h1 className="text-lg font-semibold">AI รายงาน Access Log</h1>
+              <div className="text-xs text-slate-500">
+                สไตล์: {stylePresets.find(s => s.value === selectedStyle)?.label} •
+                โครง: {layoutPresets.find(l => l.value === selectedLayout)?.label} •
+                โทน: {toneOptions.find(t => t.value === selectedTone)?.label}
+              </div>
             </div>
           </div>
 
@@ -620,21 +923,31 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
               <option value="pdf">PDF</option>
             </select>
 
-            <button onClick={handleCopy} className="p-2 hover:bg-slate-100 rounded-lg" title="คัดลอก">
+            <button
+              onClick={handleCopy}
+              className="p-2 hover:bg-slate-100 rounded-lg"
+              title="คัดลอก"
+              disabled={!reportContent}
+            >
               {copied ? <CheckCircle className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
             </button>
 
-            <button onClick={handleExport} className="p-2 hover:bg-slate-100 rounded-lg" title="ส่งออก">
+            <button
+              onClick={handleExport}
+              className="p-2 hover:bg-slate-100 rounded-lg"
+              title="ส่งออก"
+              disabled={!reportContent}
+            >
               <FileDown className="w-5 h-5" />
             </button>
 
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition-all"
             >
               {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {isGenerating ? 'สร้าง...' : 'สร้าง'}
+              {isGenerating ? 'AI กำลังคิด...' : 'สร้างด้วย AI'}
             </button>
           </div>
         </div>
@@ -646,6 +959,21 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
           </div>
         )}
 
+        {/* Generation Progress */}
+        {isGenerating && (
+          <div className="mx-4 mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-purple-800">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>AI กำลังวิเคราะห์ข้อมูลและสร้างรายงาน...</span>
+            </div>
+            <div className="text-xs text-purple-600 mt-1">
+              กำลังประมวลผล: {stats?.totalAccess?.toLocaleString('th-TH') || 0} รายการ •
+              สไตล์: {stylePresets.find(s => s.value === selectedStyle)?.label} •
+              ความลึก: {depthOptions.find(d => d.value === selectedDepth)?.label}
+            </div>
+          </div>
+        )}
+
         {/* Editor */}
         <div className="flex-1 bg-white min-h-0">
           {viewMode === 'split' && (
@@ -654,7 +982,15 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
                 ref={editorRef}
                 value={reportContent}
                 onChange={(e) => setReportContent(e.target.value)}
-                placeholder="กด 'สร้าง' เพื่อเริ่มต้น หรือใช้เทมเพลตกราฟจาก Sidebar"
+                placeholder={`กด 'สร้างด้วย AI' เพื่อให้ AI วิเคราะห์และสร้างรายงานตามที่ตั้งค่าไว้
+
+หรือใช้เทมเพลตด่วนจาก Sidebar ทางซ้าย
+
+การตั้งค่าปัจจุบัน:
+• สไตล์: ${stylePresets.find(s => s.value === selectedStyle)?.label}
+• โครงสร้าง: ${layoutPresets.find(l => l.value === selectedLayout)?.label}
+• โทน: ${toneOptions.find(t => t.value === selectedTone)?.label}
+• ความลึก: ${depthOptions.find(d => d.value === selectedDepth)?.label}`}
                 className="w-full h-full resize-none border-r border-slate-200 p-4 text-sm font-mono focus:outline-none"
               />
               <div className="h-full min-h-0 overflow-auto p-4 bg-slate-50">
@@ -682,7 +1018,7 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
               ref={editorRef}
               value={reportContent}
               onChange={(e) => setReportContent(e.target.value)}
-              placeholder="กด 'สร้าง' เพื่อเริ่มต้น หรือใช้เทมเพลตกราฟจาก Sidebar"
+              placeholder={`กด 'สร้างด้วย AI' เพื่อให้ AI วิเคราะห์และสร้างรายงานตามที่ตั้งค่าไว้`}
               className="w-full h-full resize-none p-4 text-sm font-mono focus:outline-none"
             />
           )}

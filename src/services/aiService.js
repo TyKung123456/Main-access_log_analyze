@@ -350,10 +350,12 @@ ${fileContext}
     filters = {},
     chartData = {},
     style = 'business_concise',
-    layout = 'standard'
+    layout = 'standard',
+    // New, optional advanced options (from UI)
+    options = {}
   } = {}) {
     try {
-      const markdown = this.buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout });
+      const markdown = this.buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout, options });
       return { markdown, style, layout };
     } catch (error) {
       console.error('[AI Service] generateReport failed:', error);
@@ -361,9 +363,17 @@ ${fileContext}
     }
   }
 
-  buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout }) {
+  buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout, options = {} }) {
     const styleConfig = this.getReportStyleConfig(style);
     const layoutConfig = this.getReportLayoutConfig(layout);
+    const tone = options.tone || 'professional'; // 'professional' | 'formal' | 'casual' | 'urgent' | 'conversational'
+    const depth = options.depth || 'medium'; // 'shallow' | 'medium' | 'deep' | 'comprehensive'
+    const language = options.language || 'thai'; // currently supports 'thai' (default)
+    const includeCharts = options.includeCharts === true;
+    const includeRecommendations = options.includeRecommendations !== false; // default on
+    const includeRiskAssessment = options.includeRiskAssessment !== false;   // default on
+    const caseTitle = options.caseTitle || null;
+    const customPrompt = (options.customPrompt || '').trim();
     const metrics = this.extractCoreMetrics(stats);
     const locationHighlights = this.getLocationHighlights(stats, chartData);
     const directionSummary = this.getDirectionSummary(chartData);
@@ -372,11 +382,13 @@ ${fileContext}
     const now = new Date();
 
     const header = [
-      '# รายงานวิเคราะห์การเข้าใช้งานระบบ',
+      '# ' + (language === 'thai' ? 'รายงานวิเคราะห์การเข้าใช้งานระบบ' : 'Access Log Analysis Report'),
       '',
-      `**วันที่จัดทำ:** ${now.toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}`,
-      `**รูปแบบรายงาน:** ${layoutConfig.label} • ${styleConfig.label}`,
-    ];
+      (caseTitle ? `**${language === 'thai' ? 'เรื่อง' : 'Case'}:** ${caseTitle}` : null),
+      `**${language === 'thai' ? 'วันที่จัดทำ' : 'Generated at'}:** ${now.toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })}`,
+      `**${language === 'thai' ? 'รูปแบบรายงาน' : 'Layout/Style'}:** ${layoutConfig.label} • ${styleConfig.label}`,
+      (customPrompt ? (language === 'thai' ? `> ข้อกำหนดเพิ่มเติม: ${customPrompt}` : `> Custom instructions: ${customPrompt}`) : null),
+    ].filter(Boolean);
 
     if (uploadStats?.fileName) {
       const records = typeof uploadStats.totalRecords === 'number'
@@ -389,19 +401,44 @@ ${fileContext}
     header.push('---');
     header.push('');
 
+    // Determine sections based on layout, depth, and toggles
+    let sectionKeys = [...layoutConfig.sections];
+    if (!includeRecommendations) {
+      sectionKeys = sectionKeys.filter((s) => s !== 'recommendations' && s !== 'next_steps');
+    }
+    if (!includeRiskAssessment) {
+      sectionKeys = sectionKeys.filter((s) => s !== 'risks');
+    }
+    if (depth === 'shallow') {
+      // Keep only essentials
+      sectionKeys = sectionKeys.filter((s) => ['executive_summary', 'kpi'].includes(s));
+    } else if (depth === 'deep') {
+      // Ensure detailed parts remain; keep all except appendix if not in layout
+      // no-op here as default already includes details
+    } else if (depth === 'comprehensive') {
+      // Add next_steps if missing
+      if (!sectionKeys.includes('next_steps')) sectionKeys.push('next_steps');
+    }
+
     const context = {
       styleConfig,
       layoutConfig,
+      styleKey: style,
       metrics,
       locationHighlights,
       directionSummary,
       peakHour,
       filterSummary,
       uploadStats,
-      stats
+      stats,
+      chartData,
+      includeCharts,
+      tone,
+      depth,
+      language
     };
 
-    const sections = layoutConfig.sections
+    const sections = sectionKeys
       .map((sectionKey) => this.renderReportSection(sectionKey, context))
       .filter(Boolean);
 
@@ -409,37 +446,83 @@ ${fileContext}
   }
 
   renderReportSection(sectionKey, context) {
-    const { styleConfig, metrics, locationHighlights, directionSummary, peakHour, filterSummary, uploadStats, stats } = context;
+    const { styleConfig, styleKey, metrics, locationHighlights, directionSummary, peakHour, filterSummary, uploadStats, stats, chartData, includeCharts, tone, language, depth } = context;
     const numberOrDash = (value, suffix = 'ครั้ง') =>
       typeof value === 'number' && !Number.isNaN(value) ? `${value.toLocaleString('th-TH')} ${suffix}` : `- ${suffix}`;
 
     switch (sectionKey) {
       case 'executive_summary': {
-        const lines = [
-          '## บทสรุปผู้บริหาร',
-          styleConfig.summaryIntro,
-          '',
-          `- ปริมาณการเข้าใช้งานรวม ${numberOrDash(metrics.total, 'ครั้ง')}`,
-          `- อัตราอนุมัติ ${metrics.successRateText}`,
-          `- การปฏิเสธ ${numberOrDash(metrics.denied, 'ครั้ง')} (${metrics.deniedRateText})`,
-          `- ผู้ใช้ที่ไม่ซ้ำ ${numberOrDash(metrics.uniqueUsers, 'คน')}`
-        ];
+        const title = language === 'thai' ? '## บทสรุปผู้บริหาร' : '## Executive Summary';
+        const intro = styleConfig.summaryIntro;
+        const lines = [title, this.applyTone(intro, tone, language), ''];
 
-        if (peakHour) {
+        // Style-specific summary emphasis
+        if (styleKey === 'business_concise') {
+          lines.push(
+            `- ปริมาณรวม ${numberOrDash(metrics.total, 'ครั้ง')}`,
+            `- อัตราอนุมัติ ${metrics.successRateText} • ปฏิเสธ ${metrics.deniedRateText}`
+          );
+        } else if (styleKey === 'analytical') {
+          lines.push(
+            `- ปริมาณรวม ${numberOrDash(metrics.total, 'ครั้ง')}`,
+            `- อัตราอนุมัติ ${metrics.successRateText} • ปฏิเสธ ${metrics.deniedRateText}`,
+            `- ผู้ใช้ที่ไม่ซ้ำ ${numberOrDash(metrics.uniqueUsers, 'คน')}`
+          );
+          const drivers = [];
+          if (peakHour) drivers.push(`ช่วงเวลาสูงสุด: ${peakHour}`);
+          if (locationHighlights.length > 0) drivers.push(`พื้นที่นำ: ${locationHighlights[0].label} (${locationHighlights[0].valueText})`);
+          if (directionSummary) drivers.push(`ทิศทางเข้า/ออก: ${directionSummary}`);
+          if (drivers.length) {
+            lines.push('', (language === 'thai' ? '**ตัวขับเคลื่อนหลัก:**' : '**Key drivers:**'));
+            lines.push(...drivers.map(d => `- ${d}`));
+          }
+        } else if (styleKey === 'technical') {
+          lines.push(
+            `- ปริมาณรวม ${numberOrDash(metrics.total, 'ครั้ง')} • ผู้ใช้ ${numberOrDash(metrics.uniqueUsers, 'คน')}`,
+            `- อัตราอนุมัติ ${metrics.successRateText} • ปฏิเสธ ${metrics.deniedRateText}`,
+            '- วิธีคำนวณ: success/total, denied/total; คัดเลือก peak จาก hourlyData; top location จาก locationData'
+          );
+        } else if (styleKey === 'narrative') {
+          const story = language === 'thai'
+            ? `วันนี้ระบบมีการใช้งานรวม ${metrics.total?.toLocaleString('th-TH') || '-'} ครั้ง โดยอัตราอนุมัติ ${metrics.successRateText} และปฏิเสธ ${metrics.deniedRateText}${peakHour ? ` ช่วงคับคั่งคือ ${peakHour}` : ''}${locationHighlights[0] ? ` จุดที่ใช้งานมากคือ ${locationHighlights[0].label}` : ''}.`
+            : 'Activity proceeded steadily with high approval and some denials.';
+          lines.push(story);
+        } else {
+          // formal or default
+          lines.push(
+            `- ปริมาณการเข้าใช้งานรวม ${numberOrDash(metrics.total, 'ครั้ง')}`,
+            `- อัตราอนุมัติ ${metrics.successRateText}`,
+            `- การปฏิเสธ ${numberOrDash(metrics.denied, 'ครั้ง')} (${metrics.deniedRateText})`,
+            `- ผู้ใช้ที่ไม่ซ้ำ ${numberOrDash(metrics.uniqueUsers, 'คน')}`
+          );
+        }
+
+        if (peakHour && depth !== 'shallow') {
           lines.push(`- ช่วงเวลาที่มีการใช้งานสูงสุด: ${peakHour}`);
         }
 
         if (locationHighlights.length > 0) {
-          lines.push(`- พื้นที่ที่ใช้บ่อยที่สุด: ${locationHighlights[0].label} (${locationHighlights[0].valueText})`);
+          const locText = depth === 'shallow'
+            ? `- จุดใช้งานสูงสุด: ${locationHighlights[0].label}`
+            : `- พื้นที่ที่ใช้บ่อยที่สุด: ${locationHighlights[0].label} (${locationHighlights[0].valueText})`;
+          lines.push(locText);
         }
 
-        return lines.join('\n');
+        // Tone-aware rewrite and ordering
+        const toned = this.adjustSummaryLinesByTone(lines, tone, metrics, language);
+
+        if (includeCharts) {
+          toned.push('', '[CHART:ACCESS_BY_LOCATION]', '[CHART:SUCCESS_RATE]');
+        }
+
+        return toned.join('\n');
       }
 
       case 'scope': {
+        const title = language === 'thai' ? '## ขอบเขตและข้อมูลที่ใช้' : '## Scope & Data Used';
         const lines = [
-          '## ขอบเขตและข้อมูลที่ใช้',
-          styleConfig.scopeIntro,
+          title,
+          this.applyTone(styleConfig.scopeIntro, tone, language),
           ''
         ];
 
@@ -458,9 +541,10 @@ ${fileContext}
       }
 
       case 'kpi': {
+        const title = language === 'thai' ? '## KPI / สถิติภาพรวม' : '## KPI / Overview Metrics';
         const lines = [
-          '## KPI / สถิติภาพรวม',
-          styleConfig.kpiIntro,
+          title,
+          this.applyTone(styleConfig.kpiIntro, tone, language),
           '',
           `- จำนวนการเข้าใช้งานทั้งหมด: ${numberOrDash(metrics.total)}`,
           `- การเข้าใช้งานสำเร็จ: ${numberOrDash(metrics.success)} (${metrics.successRateText})`,
@@ -472,48 +556,80 @@ ${fileContext}
           lines.push(`- สัดส่วนทิศทางการเข้า/ออก: ${directionSummary}`);
         }
 
-        return lines.join('\n');
+        // Style/depth additions
+        if (styleKey === 'analytical') {
+          const avgPerUser = metrics.uniqueUsers ? (metrics.total / metrics.uniqueUsers).toFixed(2) : null;
+          if (avgPerUser) lines.push(`- ค่าเฉลี่ยการเข้าใช้งานต่อผู้ใช้: ${avgPerUser} ครั้ง/คน`);
+          const hourlyAvg = this.getHourlyAverage(chartData);
+          if (hourlyAvg) lines.push(`- ค่าเฉลี่ยต่อชั่วโมง: ${hourlyAvg} ครั้ง/ชั่วโมง`);
+        }
+        if (styleKey === 'business_concise') {
+          // keep tight: drop redundant item in shallow
+          if (depth === 'shallow') {
+            lines.splice(4, 1); // remove unique users line
+          }
+        }
+
+        // Tone-aware KPI phrasing and order (e.g., urgent highlights denied first)
+        const tonedKpi = this.adjustKpiLinesByTone(lines, tone, language);
+
+        if (includeCharts) {
+          tonedKpi.push('', '[CHART:ACCESS_BY_LOCATION]', '[CHART:SUCCESS_RATE]');
+        }
+
+        return tonedKpi.join('\n');
       }
 
       case 'findings': {
+        const title = language === 'thai' ? '## ข้อค้นพบที่สำคัญ' : '## Key Findings';
         const lines = [
-          '## ข้อค้นพบที่สำคัญ',
-          styleConfig.findingIntro,
+          title,
+          this.applyTone(styleConfig.findingIntro, tone, language),
           ''
         ];
 
-        lines.push(metrics.successRate >= 0.95
-          ? '- ระบบมีอัตราการอนุมัติสูงกว่า 95% แสดงถึงการตั้งสิทธิ์ที่เหมาะสม'
-          : '- ระบบมีอัตราการอนุมัติต่ำกว่า 95% แนะนำให้ตรวจสอบสิทธิ์ของผู้ใช้งานที่ถูกปฏิเสธบ่อยครั้ง');
-
-        if (metrics.deniedRate > 0.1) {
-          lines.push('- พบอัตราปฏิเสธเกิน 10% ควรตรวจสอบสาเหตุและพื้นที่ที่เกิดขึ้น');
-        } else if (metrics.deniedRate >= 0) {
-          lines.push('- อัตราปฏิเสธอยู่ในระดับยอมรับได้ แต่ควรติดตามต่อเนื่อง');
-        }
+        const severity = this.classifySeverity(metrics.deniedRate);
+        lines.push(
+          metrics.successRate >= 0.95
+            ? '- อัตราอนุมัติสูง (>95%) แสดงถึงการตั้งสิทธิ์เหมาะสม'
+            : '- อัตราอนุมัติต่ำ (<95%) ควรตรวจสอบกลุ่มที่ถูกปฏิเสียบ่อย',
+          severity === 'HIGH'
+            ? (tone === 'urgent' ? '- [สูง] พบความเสี่ยงการปฏิเสธสูง ต้องดำเนินการทันที' : '- [สูง] อัตราปฏิเสธสูง ควรตรวจสอบเร่งด่วน')
+            : (metrics.deniedRate > 0.1 ? '- [กลาง] ปฏิเสธเกิน 10% ควรหาสาเหตุ' : '- [ต่ำ] ปฏิเสธอยู่ในเกณฑ์ควบคุมได้')
+        );
 
         if (locationHighlights.length > 0) {
-          const topLocations = locationHighlights
+          const limit = depth === 'shallow' ? 1 : locationHighlights.length;
+          const topLocations = locationHighlights.slice(0, limit)
             .map((item, idx) => `${idx + 1}. ${item.label} (${item.valueText})`).join('\n');
-          lines.push('');
-          lines.push('**พื้นที่ที่ใช้งานสูงสุด:**');
-          lines.push(topLocations);
+          lines.push('', '**พื้นที่ที่ใช้งานสูงสุด:**', topLocations);
+        }
+
+        if (styleKey === 'analytical' && peakHour) {
+          lines.push(`- ช่วงเวลาหนาแน่น: ${peakHour}`);
         }
 
         return lines.join('\n');
       }
 
       case 'risks': {
+        const title = language === 'thai' ? '## ความเสี่ยงและผลกระทบ' : '## Risks & Impact';
         const lines = [
-          '## ความเสี่ยงและผลกระทบ',
-          styleConfig.riskIntro,
+          title,
+          this.applyTone(styleConfig.riskIntro, tone, language),
           ''
         ];
 
-        if (metrics.deniedRate > 0.15) {
-          lines.push('- ความเสี่ยงด้านสิทธิ์เข้าถึง: อัตราปฏิเสธเกิน 15% อาจสะท้อนการตั้งสิทธิ์ไม่เหมาะสม');
-        } else {
-          lines.push('- ความเสี่ยงด้านสิทธิ์เข้าถึงอยู่ในเกณฑ์ควบคุมได้ แต่ควรมีการตรวจรายการผิดปกติเป็นระยะ');
+        const severity = this.classifySeverity(metrics.deniedRate);
+        const sevText = severity === 'HIGH' ? 'สูง' : severity === 'MED' ? 'ปานกลาง' : 'ต่ำ';
+        lines.push(`- ระดับความเสี่ยงโดยรวม: ${sevText}`);
+        lines.push(
+          metrics.deniedRate > 0.15
+            ? '- ความเสี่ยงสิทธิ์เข้าถึง: ปฏิเสธ >15% อาจตั้งสิทธิ์ไม่เหมาะสม หรือมีความพยายามผิดปกติ'
+            : '- ความเสี่ยงสิทธิ์เข้าถึง: อยู่ในเกณฑ์ควบคุมได้ แต่ควรติดตาม'
+        );
+        if (styleKey === 'technical') {
+          lines.push('- สมมติฐานข้อมูล: ไม่มีข้อมูลช่วงเทียบเคียง, ใช้ threshold 10%/15% สำหรับ MED/HIGH');
         }
 
         if (peakHour) {
@@ -526,13 +642,28 @@ ${fileContext}
       }
 
       case 'recommendations': {
+        const title = language === 'thai' ? '## ข้อเสนอแนะ' : '## Recommendations';
         const lines = [
-          '## ข้อเสนอแนะ',
-          styleConfig.recommendationIntro,
+          title,
+          this.applyTone(styleConfig.recommendationIntro, tone, language),
           '',
-          '- กำหนดกระบวนการทบทวนสิทธิ์เข้าถึงของผู้ใช้งานตามรอบเวลา (เช่น รายไตรมาส)',
-          '- ติดตั้งการแจ้งเตือนทันทีเมื่อพบการปฏิเสธซ้ำในพื้นที่เดียวกัน',
-          '- ออกคู่มือการใช้งานและสร้าง Awareness ให้บุคลากรเรื่องการใช้บัตร/รหัสผ่านอย่างปลอดภัย'
+          ...(styleKey === 'business_concise' ? [
+            '- ทบทวนสิทธิ์เข้าถึงรายไตรมาส',
+            '- ตั้งแจ้งเตือนเมื่อปฏิเสธซ้ำที่จุดเดิม',
+            '- สื่อสารการใช้บัตร/รหัสผ่านให้ถูกต้อง'
+          ] : styleKey === 'analytical' ? [
+            '- ตั้ง threshold การปฏิเสธ (เช่น >10%) และแจ้งเตือนอัตโนมัติ',
+            '- วิเคราะห์ top-3 จุด/ช่วงเวลาที่มีปฏิเสธสูง พร้อม RCA รายสัปดาห์',
+            '- ติดตาม KPI success/denied รายสัปดาห์ และทำ control chart'
+          ] : styleKey === 'technical' ? [
+            '- เพิ่มดัชนี/ดัด schema สำหรับคิวรีรายชั่วโมงและตามสถานที่',
+            '- สร้าง job ตรวจจับ spike แบบ moving average + z-score',
+            '- บันทึกเหตุผลการปฏิเสธแบบมาตรฐานสำหรับการวิเคราะห์ย้อนหลัง'
+          ] : [
+            '- กำหนดกระบวนการทบทวนสิทธิ์เข้าถึงของผู้ใช้งานตามรอบเวลา (เช่น รายไตรมาส)',
+            '- ติดตั้งการแจ้งเตือนทันทีเมื่อพบการปฏิเสธซ้ำในพื้นที่เดียวกัน',
+            '- ออกคู่มือการใช้งานและสร้าง Awareness ให้บุคลากรเรื่องการใช้บัตร/รหัสผ่านอย่างปลอดภัย'
+          ])
         ];
 
         if (stats?.alerts?.length) {
@@ -543,9 +674,10 @@ ${fileContext}
       }
 
       case 'appendix': {
+        const title = language === 'thai' ? '## ภาคผนวก' : '## Appendix';
         const lines = [
-          '## ภาคผนวก',
-          styleConfig.appendixIntro,
+          title,
+          this.applyTone(styleConfig.appendixIntro, tone, language),
           ''
         ];
 
@@ -562,17 +694,121 @@ ${fileContext}
       }
 
       case 'next_steps': {
+        const title = language === 'thai' ? '## ขั้นตอนถัดไปที่แนะนำ' : '## Next Steps';
         return [
-          '## ขั้นตอนถัดไปที่แนะนำ',
-          '- นัดประชุมสรุปรายงานกับผู้มีส่วนได้ส่วนเสียภายใน 1 สัปดาห์',
-          '- จัดทำแผนดำเนินการแก้ไขสำหรับประเด็นที่พบและกำหนดผู้รับผิดชอบ',
-          '- ติดตามผลลัพธ์และอัปเดตรายงานในรอบถัดไป'
+          title,
+          '- ' + (language === 'thai' ? 'นัดประชุมสรุปรายงานกับผู้มีส่วนได้ส่วนเสียภายใน 1 สัปดาห์' : 'Schedule a review meeting within 1 week'),
+          '- ' + (language === 'thai' ? 'จัดทำแผนดำเนินการแก้ไขสำหรับประเด็นที่พบและกำหนดผู้รับผิดชอบ' : 'Prepare an action plan and assign owners'),
+          '- ' + (language === 'thai' ? 'ติดตามผลลัพธ์และอัปเดตรายงานในรอบถัดไป' : 'Track outcomes and update in next cycle')
         ].join('\n');
       }
 
       default:
         return '';
     }
+  }
+
+  // Apply tone to an intro/paragraph without changing semantics
+  applyTone(text, tone = 'professional', language = 'thai') {
+    if (!text) return '';
+    if (language !== 'thai') return text; // For now, only Thai tone modifiers
+    switch (tone) {
+      case 'urgent':
+        return `ด่วน: ${text}`;
+      case 'casual':
+        return `สรุปแบบสบายๆ: ${text}`;
+      case 'conversational':
+        return `สรุปให้เข้าใจง่าย: ${text}`;
+      case 'formal':
+        return `เรียนผู้เกี่ยวข้อง, ${text}`;
+      default:
+        return text;
+    }
+  }
+
+  classifySeverity(deniedRate = 0) {
+    if (typeof deniedRate !== 'number') return 'LOW';
+    if (deniedRate > 0.15) return 'HIGH';
+    if (deniedRate > 0.1) return 'MED';
+    return 'LOW';
+  }
+
+  getHourlyAverage(chartData = {}) {
+    if (!Array.isArray(chartData.hourlyData) || chartData.hourlyData.length === 0) return null;
+    const total = chartData.hourlyData.reduce((s, it) => s + (it.count || 0), 0);
+    const n = chartData.hourlyData.length;
+    if (!n) return null;
+    return Math.round(total / n);
+  }
+
+  // Reorder and rephrase summary bullets by tone
+  adjustSummaryLinesByTone(lines, tone = 'professional', metrics = {}, language = 'thai') {
+    if (!Array.isArray(lines)) return [];
+    if (language !== 'thai') return lines; // Thai-focused phrasing for now
+
+    // Separate header + intro from bullets
+    const [title, intro, empty, ...bullets] = lines;
+    let resultBullets = bullets.filter(Boolean);
+
+    if (tone === 'urgent') {
+      // Move denied bullet to first and emphasize
+      const deniedIdx = resultBullets.findIndex(l => l.includes('ปฏิเสธ'));
+      if (deniedIdx > -1) {
+        const [denied] = resultBullets.splice(deniedIdx, 1);
+        resultBullets.unshift(denied.replace('- ', '- [เร่งด่วน] '));
+      }
+      // Add immediate action at end
+      resultBullets.push('- ดำเนินการแก้ไขเบื้องต้นทันที: ตรวจสอบจุดที่ปฏิเสธสูงสุด และปรับสิทธิ์');
+    } else if (tone === 'casual' || tone === 'conversational') {
+      // Simpler phrases
+      resultBullets = resultBullets.map(line =>
+        line
+          .replace('ปริมาณการเข้าใช้งานรวม', 'มีการใช้งานรวม')
+          .replace('อัตราอนุมัติ', 'ผ่าน')
+          .replace('การเข้าใช้งานถูกปฏิเสธ', 'ปฏิเสธ')
+          .replace('ผู้ใช้ที่ไม่ซ้ำ', 'ผู้ใช้ไม่ซ้ำ')
+          .replace('พื้นที่ที่ใช้บ่อยที่สุด', 'จุดที่ฮิตสุด')
+      );
+    } else if (tone === 'formal') {
+      resultBullets = resultBullets.map(line =>
+        line
+          .replace('ปริมาณการเข้าใช้งานรวม', 'จำนวนการเข้าใช้งานรวมทั้งสิ้น')
+          .replace('ผู้ใช้ที่ไม่ซ้ำ', 'จำนวนผู้ใช้ที่ไม่ซ้ำ')
+      );
+    }
+
+    return [title, intro, empty, ...resultBullets];
+  }
+
+  // Adjust KPI list for tone (ordering and phrasing)
+  adjustKpiLinesByTone(lines, tone = 'professional', language = 'thai') {
+    if (!Array.isArray(lines)) return [];
+    if (language !== 'thai') return lines;
+    const [title, intro, empty, ...bullets] = lines;
+    let b = [...bullets];
+
+    if (tone === 'urgent') {
+      // Move denied KPI up
+      const idxDenied = b.findIndex(x => x.includes('ถูกปฏิเสธ'));
+      if (idxDenied > 0) {
+        const [denied] = b.splice(idxDenied, 1);
+        b.unshift(denied.replace('- ', '- [สำคัญ] '));
+      }
+    } else if (tone === 'casual' || tone === 'conversational') {
+      // Simplify KPI wording
+      b = b.map(x => x
+        .replace('จำนวนการเข้าใช้งานทั้งหมด:', 'รวม:')
+        .replace('การเข้าใช้งานสำเร็จ:', 'ผ่าน:')
+        .replace('การเข้าใช้งานถูกปฏิเสธ:', 'ปฏิเสธ:')
+        .replace('ผู้ใช้ที่ไม่ซ้ำ:', 'ผู้ใช้ไม่ซ้ำ:'));
+    } else if (tone === 'formal') {
+      b = b.map(x => x
+        .replace('จำนวนการเข้าใช้งานทั้งหมด:', 'จำนวนการเข้าใช้งานรวมทั้งหมด:')
+        .replace('การเข้าใช้งานสำเร็จ:', 'จำนวนการเข้าใช้งานที่สำเร็จ:')
+        .replace('การเข้าใช้งานถูกปฏิเสธ:', 'จำนวนการเข้าใช้งานที่ถูกปฏิเสธ:'));
+    }
+
+    return [title, intro, empty, ...b];
   }
 
   getReportStyleConfig(style) {

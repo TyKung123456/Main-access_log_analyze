@@ -181,7 +181,12 @@ const QuickInsights = ({ params }) => {
                     title="ดูรายละเอียดสถานที่"
                   >
                     <div className="font-medium text-gray-900 truncate">{idx+1}. {l.name}</div>
-                    <div className="text-xs text-gray-600 truncate">รวม {l.count.toLocaleString('th-TH')} • ปฏิเสธ {l.denied.toLocaleString('th-TH')}</div>
+                    <div className="text-xs text-gray-600 truncate">
+                      รวม {l.count.toLocaleString('th-TH')} • ปฏิเสธ {l.denied.toLocaleString('th-TH')}
+                      {l.count > 0 && (
+                        <span className="ml-1">({((l.denied / l.count) * 100).toFixed(1)}%)</span>
+                      )}
+                    </div>
                   </button>
                   <button onClick={() => openLocationDetail(l.name)} className="text-blue-600 text-xs hover:underline">รายละเอียด</button>
                 </li>

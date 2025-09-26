@@ -1,6 +1,7 @@
 // Compute suspicion score per user with a clear factor breakdown.
 // Inputs: array of log items shaped like useLogData.transformApiData output
 // Returns: array of { user, score, breakdown: [...], counts: {...}, lastTime, lastLocation }
+// The final score is capped at 100, acting as a "base of 100" for the suspicion score.
 
 export function computeSuspicionAll(logs = []) {
   const isEmptyish = (v) => {
@@ -56,39 +57,45 @@ export function computeSuspicionAll(logs = []) {
   for (const entry of byUser.values()) {
     const breakdown = [];
 
-    // Factor: denied attempts (weight 2 per event)
-    if (entry.denied > 0) {
+    // Factor: denied attempts (weight 2 per event, based on percentage)
+    if (entry.total > 0 && entry.denied > 0) {
+      const deniedRate = entry.denied / entry.total;
+      const contrib = Math.round(deniedRate * 20 * 10) / 10; // Scale to contribute up to 20 points
       breakdown.push({
         key: 'denied',
         label: 'ปฏิเสธ',
-        value: entry.denied,
+        value: Math.round(deniedRate * 100),
         weight: 2,
-        contrib: entry.denied * 2,
-        detail: 'จำนวนครั้งที่ถูกปฏิเสธ'
+        contrib,
+        detail: `เปอร์เซ็นต์การถูกปฏิเสธ (${entry.denied}/${entry.total})`
       });
     }
 
-    // Factor: off-hours access (weight 1 per event)
-    if (entry.offHours > 0) {
+    // Factor: off-hours access (weight 1 per event, based on percentage)
+    if (entry.total > 0 && entry.offHours > 0) {
+      const offHoursRate = entry.offHours / entry.total;
+      const contrib = Math.round(offHoursRate * 10 * 10) / 10; // Scale to contribute up to 10 points
       breakdown.push({
         key: 'offHours',
         label: 'นอกเวลา',
-        value: entry.offHours,
+        value: Math.round(offHoursRate * 100),
         weight: 1,
-        contrib: entry.offHours * 1,
-        detail: 'เข้าใช้งานช่วง 22:00–06:00'
+        contrib,
+        detail: `เปอร์เซ็นต์การเข้าใช้งานช่วง 22:00–06:00 (${entry.offHours}/${entry.total})`
       });
     }
 
-    // Factor: weekend access (weight 1 per event)
-    if (entry.weekend > 0) {
+    // Factor: weekend access (weight 1 per event, based on percentage)
+    if (entry.total > 0 && entry.weekend > 0) {
+      const weekendRate = entry.weekend / entry.total;
+      const contrib = Math.round(weekendRate * 10 * 10) / 10; // Scale to contribute up to 10 points
       breakdown.push({
         key: 'weekend',
         label: 'วันหยุด',
-        value: entry.weekend,
+        value: Math.round(weekendRate * 100),
         weight: 1,
-        contrib: entry.weekend * 1,
-        detail: 'เข้าใช้งานในวันเสาร์/อาทิตย์'
+        contrib,
+        detail: `เปอร์เซ็นต์การเข้าใช้งานในวันเสาร์/อาทิตย์ (${entry.weekend}/${entry.total})`
       });
     }
 

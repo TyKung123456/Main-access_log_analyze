@@ -6,7 +6,7 @@ const NavigationTabs = ({ activeTab, setActiveTab }) => {
   const tabs = [
     { 
       id: 'logs', 
-      label: 'ประวัติการใช้งาน', 
+      label: 'Transaction Log',
       icon: Table,
       description: 'Transaction Log แบบตาราง'
     },

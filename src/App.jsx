@@ -8,7 +8,6 @@ import ChatPage from './components/Chat/ChatPage.jsx';
 import CombinedDashboardAnalyticsPage from './Analytics/CombinedDashboardAnalyticsPage.jsx';
 import TransactionLogPage from './components/Logs/TransactionLogPage.jsx';
 import CasesPage from './components/Cases/CasesPage.jsx';
-import PivotTable from './components/Analytics/PivotTable.jsx';
 import { useLogData } from './hooks/useLogData.js';
 import { useFilters } from './hooks/useFilters.js';
 import { useUpload } from './hooks/useUpload.js';
@@ -16,7 +15,7 @@ import LogDetailModal from './components/Dashboard/LogDetailModal.jsx';
 import { AlertCircle, CheckCircle, X, RefreshCw, ChevronRight } from 'lucide-react';
 
 const AccessLogAnalyzer = () => {
-  const [activeTab, setActiveTab] = useState('logs');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [systemStatus, setSystemStatus] = useState({
@@ -138,11 +137,10 @@ const AccessLogAnalyzer = () => {
 
   const getPageTitle = () => {
     const map = {
-      logs: { title: 'ประวัติการใช้งาน', subtitle: 'ดูและค้นหาข้อมูลการเข้า–ออก' },
+      logs: { title: 'Transaction Log', subtitle: 'ดูและค้นหาข้อมูลการเข้า–ออก' },
       dashboard: { title: 'แดชบอร์ด & วิเคราะห์', subtitle: 'ภาพรวมเชิงลึกของระบบ' },
-      pivot: { title: 'ตาราง Pivot', subtitle: 'สรุปข้อมูลแบบกำหนดเอง' },
-      cases: { title: 'รายงานเคส', subtitle: 'เคสสืบค้นความผิดปกติ' },
-      chat: { title: 'Chat กับ AI', subtitle: 'สอบถามและสรุปผลอัตโนมัติ' },
+      cases: { title: 'รายงานเหตุการณ์ (เคส)', subtitle: 'สืบค้น วิเคราะห์ และส่งออกเป็นรายงาน' },
+      chat: { title: 'สร้างรายงาน AI', subtitle: 'กำหนดสไตล์ โทน และความลึก เพื่อสรุปอัตโนมัติ' },
       upload: { title: 'อัปโหลดข้อมูล', subtitle: 'นำเข้าข้อมูลเพื่อวิเคราะห์' }
     };
     return map[activeTab] || { title: '', subtitle: '' };
@@ -290,9 +288,6 @@ const AccessLogAnalyzer = () => {
       ),
       cases: (
         <CasesPage />
-      ),
-      pivot: (
-        <PivotTable />
       ),
       analytics: (
         <CombinedDashboardAnalyticsPage

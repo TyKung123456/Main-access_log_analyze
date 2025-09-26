@@ -293,7 +293,24 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                             {isOpen ? <ChevronUp className="w-4 h-4 text-gray-600"/> : <ChevronDown className="w-4 h-4 text-gray-600"/>}
                           </button>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap cursor-pointer" onClick={()=>onRowClick?.(r)}>{clean(r['Date Time'] || r.dateTime)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap cursor-pointer" onClick={()=>onRowClick?.(r)}>
+                          {(() => {
+                            const dateTimeStr = clean(r['Date Time'] || r.dateTime);
+                            if (!dateTimeStr) return '-';
+                            try {
+                              const date = new Date(dateTimeStr);
+                              if (isNaN(date.getTime())) return dateTimeStr; // Fallback if invalid date
+                              const hour = date.getHours();
+                              const nextHour = (hour + 1) % 24;
+                              const formattedHour = String(hour).padStart(2, '0');
+                              const formattedNextHour = String(nextHour).padStart(2, '0');
+                              return `${date.toLocaleDateString('th-TH')} ${formattedHour}:00 - ${formattedNextHour}:00`;
+                            } catch (e) {
+                              console.error("Error parsing date for time range:", e);
+                              return dateTimeStr; // Fallback on error
+                            }
+                          })()}
+                        </td>
                         <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-gray-400"/>
@@ -368,7 +385,25 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
         </div>
         )}
         <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-gray-700">
-          <div>รวม {total.toLocaleString()} รายการ</div>
+          {(() => {
+            const totalAllowed = rows.filter(r => (r.allow === true || r.Allow === true || r.Allow === 't')).length;
+            const totalDenied = rows.filter(r => (r.allow === false || r.Allow === false || r.Allow === 'f')).length;
+            const totalRecords = rows.length;
+            const allowedRatio = totalRecords > 0 ? ((totalAllowed / totalRecords) * 100).toFixed(1) : 0;
+            const deniedRatio = totalRecords > 0 ? ((totalDenied / totalRecords) * 100).toFixed(1) : 0;
+
+            return (
+              <div className="flex items-center gap-4">
+                <span>รวม {total.toLocaleString()} รายการ</span>
+                {totalRecords > 0 && (
+                  <>
+                    <span className="text-green-600">อนุญาต: {allowedRatio}%</span>
+                    <span className="text-red-600">ปฏิเสธ: {deniedRatio}%</span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           {!logsCollapsed && (
             <div className="flex items-center gap-2">
               <button disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="px-3 py-1 border rounded disabled:opacity-40">ก่อนหน้า</button>

@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import EnhancedStatsCards from '../components/Analytics/Cards/EnhancedStatsCards.jsx';
-import AccessHeatmap from '../components/Analytics/Charts/AccessHeatmap.jsx';
 import TopEventsBarChart from '../components/Analytics/Charts/TopEventsBarChart.jsx';
 import TimelineDenied7d from '../components/Analytics/Charts/TimelineDenied7d.jsx';
 import ReviewTable from '../components/Analytics/Tables/ReviewTable.jsx';
-import RecentAccessTable from '../components/Dashboard/RecentAccessTable';
 import KPIStatusCard from '../components/Analytics/Cards/KPIStatusCard';
 import {
   Shield,
@@ -114,8 +112,6 @@ const CombinedDashboardAnalyticsPage = ({
   const [analyticsRange, setAnalyticsRange] = useState('7d'); // kept but graphs removed
   const [suspectDetail, setSuspectDetail] = useState(null);
   const [locDetail, setLocDetail] = useState(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [refreshIntervalSec] = useState(60);
   const [showIncidentChart, setShowIncidentChart] = useState(true);
   const [logsFilter, setLogsFilter] = useState(null); // { type: 'location'|'reason', value: string }
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -187,14 +183,6 @@ const CombinedDashboardAnalyticsPage = ({
   const [isLoadingSecurityMetrics, setIsLoadingSecurityMetrics] = useState(true);
   const [selectedSecurityKPI, setSelectedSecurityKPI] = useState('all');
 
-  // Optional auto refresh for near real-time mini charts and stats
-  useEffect(() => {
-    if (!autoRefresh || !refreshData) return;
-    const id = setInterval(() => {
-      try { refreshData(1, filters, sort); } catch (e) { /* noop */ }
-    }, refreshIntervalSec * 1000);
-    return () => clearInterval(id);
-  }, [autoRefresh, refreshIntervalSec, refreshData, filters, sort]);
 
   // Filtered data for RecentAccessTable based on selectedSecurityKPI
   const filteredSecurityAlerts = React.useMemo(() => {
@@ -828,8 +816,6 @@ const CombinedDashboardAnalyticsPage = ({
           </Card>
         </div>
 
-        {/* Row 4: Heatmap full width */}
-        <AccessHeatmap logData={logData} mode="avg" />
 
         {/* Row 4: Review table */}
         <ReviewTable
@@ -857,7 +843,7 @@ const CombinedDashboardAnalyticsPage = ({
                 return false;
               });
               return (
-                <RecentAccessTable data={rows} onRowClick={onRowClick} currentSortColumn={'Date Time'} currentSortOrder={'DESC'} />
+                <div className="text-sm text-gray-600">ตาราง Log ถูกปิดใช้งานตามคำขอ</div>
               );
             })()}
           </CollapsibleCard>
