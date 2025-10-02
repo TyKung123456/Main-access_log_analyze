@@ -15,7 +15,8 @@ import LogDetailModal from './components/Dashboard/LogDetailModal.jsx';
 import { AlertCircle, CheckCircle, X, RefreshCw, ChevronRight } from 'lucide-react';
 
 const AccessLogAnalyzer = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Default landing tab: go to Transaction Log instead of Dashboard
+  const [activeTab, setActiveTab] = useState('logs');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [systemStatus, setSystemStatus] = useState({

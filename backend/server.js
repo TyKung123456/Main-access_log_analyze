@@ -35,8 +35,16 @@ const buildWhereClause = (params) => {
         paramIndex += 2;
     }
     if (params.allow !== undefined && params.allow !== null) {
+        const raw = params.allow;
+        let boolVal;
+        if (typeof raw === 'boolean') boolVal = raw;
+        else if (typeof raw === 'number') boolVal = raw === 1;
+        else {
+            const s = String(raw).trim().toLowerCase();
+            boolVal = (s === 'true' || s === 't' || s === '1' || s === 'yes');
+        }
         conditions.push(`"Allow" = $${paramIndex}`);
-        values.push(params.allow === 'true'); // Convert string 'true'/'false' to boolean
+        values.push(boolVal);
         paramIndex++;
     }
     if (params.location) {
@@ -44,6 +52,14 @@ const buildWhereClause = (params) => {
         if (locations.length > 0) {
             conditions.push(`"Location" = ANY($${paramIndex}::text[])`);
             values.push(locations);
+            paramIndex++;
+        }
+    }
+    if (params.doors) {
+        const doors = Array.isArray(params.doors) ? params.doors : params.doors.split(',');
+        if (doors.length > 0) {
+            conditions.push(`"Door" = ANY($${paramIndex}::text[])`);
+            values.push(doors);
             paramIndex++;
         }
     }

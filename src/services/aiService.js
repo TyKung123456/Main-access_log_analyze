@@ -355,11 +355,49 @@ ${fileContext}
     options = {}
   } = {}) {
     try {
+      // Try real AI first if provider is not mock and service is available
+      if ((this.provider === 'local' || this.provider === 'mcp') && (await this.checkAvailability())?.available) {
+        const metrics = this.extractCoreMetrics(stats);
+        const locationHighlights = this.getLocationHighlights(stats, chartData).slice(0, 5);
+        const peakHour = this.getPeakHour(chartData);
+        const filterSummary = this.summariseFilters(filters);
+        const language = options.language || 'thai';
+
+        const header = `สร้างรายงานเชิงวิเคราะห์จากข้อมูลต่อไปนี้ โดยตอบเป็นภาษาไทยล้วน และให้เนื้อหาแตกต่างตามตัวเลือก:
+สไตล์: ${style}
+โทน: ${options.tone || 'professional'}
+ความลึก: ${options.depth || 'medium'}
+รูปแบบ: ${layout}
+ตัวเลือกเพิ่มเติม: แผนภูมิ=${options.includeCharts?'มี':'ไม่มี'}, ข้อเสนอแนะ=${options.includeRecommendations?'มี':'ไม่มี'}, ความเสี่ยง=${options.includeRiskAssessment?'มี':'ไม่มี'}
+คำสั่งพิเศษ: ${options.customPrompt || '-'}
+บริบทตัวกรอง: ${filterSummary || '-'}
+
+`;        
+        const facts = [
+          `รวม ${metrics.total} ครั้ง`,
+          `สำเร็จ ${metrics.success} ครั้ง`,
+          `ปฏิเสธ ${metrics.denied} ครั้ง (${metrics.deniedRateText})`,
+          peakHour ? `ชั่วโมงพีก: ${peakHour}` : null,
+          locationHighlights.length ? `Top สถานที่: ${locationHighlights.map(l=>`${l.label} (${l.valueText})`).join(', ')}` : null,
+        ].filter(Boolean).join('\n');
+
+        const userMessage = `${header}${facts}\n\nสร้างหัวข้อชัดเจน: (1) บทสรุปผู้บริหาร (2) KPI (3) วิเคราะห์ตามสถานที่/ช่วงเวลา (4) ข้อเสนอแนะ และสรุปปิดท้าย`;
+
+        const aiText = await this.generateResponse(userMessage, { stats: metrics });
+        if (aiText && String(aiText).trim().length > 0) {
+          // Return AI result as markdown
+          return { markdown: String(aiText).trim(), style, layout };
+        }
+      }
+
+      // Fallback to deterministic builder
       const markdown = this.buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout, options });
       return { markdown, style, layout };
     } catch (error) {
       console.error('[AI Service] generateReport failed:', error);
-      throw new Error('ไม่สามารถสร้างรายงานได้ในขณะนี้');
+      // Final fallback
+      const markdown = this.buildReportMarkdown({ stats, uploadStats, filters, chartData, style, layout, options });
+      return { markdown, style, layout };
     }
   }
 

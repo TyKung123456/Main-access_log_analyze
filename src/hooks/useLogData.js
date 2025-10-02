@@ -18,7 +18,7 @@ export const useLogData = () => {
   const [logData, setLogData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
   const [stats, setStats] = useState({});
-  const [chartData, setChartData] = useState({ hourlyData: [], locationData: [], directionData: [] });
+  const [chartData, setChartData] = useState({ hourlyData: [], locationData: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 999999, total: 0, totalPages: 1 });
@@ -84,8 +84,7 @@ export const useLogData = () => {
         apiService.getStats(params),
         Promise.all([
           apiService.getChartData('hourly', params),
-          apiService.getChartData('location', params),
-          apiService.getChartData('direction', params)
+          apiService.getChartData('location', params)
         ]),
         apiService.getLogs(params)
       ]);
@@ -95,24 +94,9 @@ export const useLogData = () => {
       // Ensure logsRes.data is an array before mapping
       const transformedLogs = (logsRes.data || []).map(transformApiData);
 
-      // Fallback: build directionData from logs if API returned empty
-      const apiDirection = chartsRes[2]?.data || [];
-      let directionData = apiDirection;
-      if (!Array.isArray(apiDirection) || apiDirection.length === 0) {
-        const counts = transformedLogs.reduce((acc, row) => {
-          const key = (row.direction || '').toString().trim().toUpperCase();
-          if (key === 'IN' || key === 'OUT') acc[key] = (acc[key] || 0) + 1;
-          return acc;
-        }, {});
-        directionData = ['IN', 'OUT']
-          .filter(k => counts[k] > 0)
-          .map(k => ({ direction: k, count: counts[k] }));
-      }
-
       setChartData({
         hourlyData: chartsRes[0]?.data || [],
-        locationData: chartsRes[1]?.data || [],
-        directionData
+        locationData: chartsRes[1]?.data || []
       });
       
       // Update both logData and filteredData states.

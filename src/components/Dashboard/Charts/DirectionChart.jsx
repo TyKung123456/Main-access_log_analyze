@@ -1,9 +1,10 @@
 // src/components/Dashboard/Charts/DirectionChart.jsx
 import React, { useState, useMemo } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locationData = [] }) => {
   const [viewMode, setViewMode] = useState('overview'); // 'overview', 'trends'
+  const [trendMode, setTrendMode] = useState('normal'); // 'normal' | 'todayAvg'
 
   // Enhanced data processing
   const chartData = useMemo(() => {
@@ -28,27 +29,39 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
 
   // Process time trends data (hourly pattern)
   const hourlyTrends = useMemo(() => {
-    if (!timeSeriesData || timeSeriesData.length === 0) {
-      // Generate mock hourly data for demonstration
-      return Array.from({ length: 12 }, (_, hour) => {
-        const realHour = hour + 6; // Start from 6 AM to 6 PM
-        return {
-          hour: `${realHour.toString().padStart(2, '0')}:00`,
-          IN: Math.floor(Math.random() * 800) + 200,
-          OUT: Math.floor(Math.random() * 800) + 200,
-          total: 0
-        };
-      }).map(item => ({
-        ...item,
-        total: item.IN + item.OUT,
-        ratio: item.OUT > 0 ? (item.IN / item.OUT).toFixed(2) : '0.00'
-      }));
+    const buildRange = (h) => {
+      const hh = String(h).padStart(2, '0');
+      const hh59 = String(h).padStart(2, '0');
+      return `${hh}:00 - ${hh59}:59`;
+    };
+    if (!Array.isArray(timeSeriesData) || timeSeriesData.length === 0) {
+      // Stable placeholder (no random), 06:00–17:59
+      return Array.from({ length: 12 }, (_, i) => {
+        const h = i + 6;
+        return { hour: `${String(h).padStart(2,'0')}:00`, hourRange: buildRange(h), IN: 0, OUT: 0, total: 0, ratio: '0.00' };
+      });
     }
-    return timeSeriesData;
+    // Normalize provided data; add hourRange and totals
+    return timeSeriesData.map(row => {
+      const hStr = String(row.hour || row.Hour || '').split(':')[0];
+      const h = isNaN(parseInt(hStr,10)) ? null : parseInt(hStr,10);
+      const IN = parseInt(row.IN || row.in || 0) || 0;
+      const OUT = parseInt(row.OUT || row.out || 0) || 0;
+      const total = IN + OUT;
+      return {
+        ...row,
+        hour: h != null ? `${String(h).padStart(2,'0')}:00` : (row.hour || ''),
+        hourRange: h != null ? buildRange(h) : (row.hourRange || row.hour || ''),
+        IN,
+        OUT,
+        total,
+        ratio: OUT > 0 ? (IN/OUT).toFixed(2) : '0.00'
+      };
+    });
   }, [timeSeriesData]);
 
-  // Simplified color scheme - only 2 colors needed
-  const COLORS = ['#10B981', '#EF4444']; // Green for IN, Red for OUT
+  // New color scheme for line chart (Purple & Orange)
+  const COLORS = { IN: '#7C3AED', OUT: '#F59E0B', TODAY: '#7C3AED', AVG: '#F59E0B' };
 
   // Calculate enhanced statistics
   const stats = useMemo(() => {
@@ -87,6 +100,24 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
 
     return { peakHour, lowHour };
   }, [hourlyTrends]);
+
+  // 3-point moving average smoothing for nicer lines
+  const smooth3 = (arr, key) => arr.map((d, i) => {
+    const a = arr[i-1]?.[key] ?? d[key];
+    const b = d[key];
+    const c = arr[i+1]?.[key] ?? d[key];
+    return { ...d, [key]: Math.round((a + b + c) / 3) };
+  });
+
+  const displayTrends = useMemo(() => {
+    const base = Array.isArray(timeSeriesData) && timeSeriesData.length > 0 ? hourlyTrends : hourlyTrends;
+    if (trendMode === 'todayAvg') {
+      const today = smooth3(base.map(d => ({ ...d })), 'todayTotal');
+      const avg = smooth3(base.map(d => ({ ...d })), 'avgTotal');
+      return { mode: 'todayAvg', data: base, today, avg };
+    }
+    return { mode: 'normal', data: smooth3(base.map(d => ({ ...d })), 'IN').map((d,i,arr)=>({ ...arr[i], OUT: smooth3(base, 'OUT')[i].OUT })) };
+  }, [hourlyTrends, timeSeriesData, trendMode]);
 
   if (loading) {
     return (
@@ -268,12 +299,21 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
             </div>
           </div>
 
+          <div className="flex items-center gap-2 mb-3">
+            <div className="text-sm text-gray-700">โหมด:</div>
+            {[
+              { id: 'normal', label: 'เข้า/ออก' },
+              { id: 'todayAvg', label: 'วันนี้ vs เฉลี่ย' }
+            ].map(m => (
+              <button key={m.id} onClick={()=>setTrendMode(m.id)} className={`text-xs px-2 py-1 rounded-md border ${trendMode===m.id? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>{m.label}</button>
+            ))}
+          </div>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlyTrends} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <LineChart data={hourlyTrends} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.6} />
                 <XAxis
-                  dataKey="hour"
+                  dataKey="hourRange"
                   tick={{ fontSize: 11, fill: '#64748b', fontWeight: 'bold' }}
                   tickLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                   axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
@@ -287,7 +327,7 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
                 <Tooltip
                   formatter={(value, name) => [
                     `${value.toLocaleString('th-TH')} ครั้ง`,
-                    name === 'IN' ? '📥 เข้า' : '📤 ออก'
+                    name === 'IN' ? '📥 เข้า' : name === 'OUT' ? '📤 ออก' : (name === 'todayTotal' ? 'วันนี้' : 'เฉลี่ย')
                   ]}
                   labelFormatter={(label, payload) => {
                     const total = payload?.reduce((sum, item) => sum + (item.value || 0), 0) || 0;
@@ -302,21 +342,30 @@ const DirectionChart = ({ data = [], loading = false, timeSeriesData = [], locat
                     maxWidth: '300px'
                   }}
                 />
-                <Bar dataKey="IN" fill="#10B981" name="IN" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="OUT" fill="#EF4444" name="OUT" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                {trendMode === 'normal' ? (
+                  <>
+                    <Line type="monotone" dataKey="IN" stroke={COLORS.IN} strokeWidth={3} dot={{ r: 2 }} activeDot={{ r: 5 }} name="IN" />
+                    <Line type="monotone" dataKey="OUT" stroke={COLORS.OUT} strokeWidth={3} dot={{ r: 2 }} activeDot={{ r: 5 }} name="OUT" />
+                  </>
+                ) : (
+                  <>
+                    <Line type="monotone" dataKey="todayTotal" stroke={COLORS.TODAY} strokeWidth={3} dot={{ r: 2 }} activeDot={{ r: 5 }} name="todayTotal" />
+                    <Line type="monotone" dataKey="avgTotal" stroke={COLORS.AVG} strokeWidth={3} dot={{ r: 2 }} activeDot={{ r: 5 }} name="avgTotal" />
+                  </>
+                )}
+              </LineChart>
             </ResponsiveContainer>
           </div>
 
           {/* Legend */}
           <div className="flex justify-center mt-4 space-x-6">
             <div className="flex items-center">
-              <div className="w-4 h-4 bg-emerald-500 rounded mr-2"></div>
-              <span className="text-sm font-medium text-gray-700">📥 การเข้า</span>
+              <div className="w-4 h-4 rounded mr-2" style={{ backgroundColor: trendMode==='normal'?COLORS.IN:COLORS.TODAY }}></div>
+              <span className="text-sm font-medium text-gray-700">{trendMode==='normal' ? '📥 การเข้า' : 'วันนี้'}</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 bg-red-500 rounded mr-2"></div>
-              <span className="text-sm font-medium text-gray-700">📤 การออก</span>
+              <div className="w-4 h-4 rounded mr-2" style={{ backgroundColor: trendMode==='normal'?COLORS.OUT:COLORS.AVG }}></div>
+              <span className="text-sm font-medium text-gray-700">{trendMode==='normal' ? '📤 การออก' : 'เฉลี่ย'}</span>
             </div>
           </div>
         </div>

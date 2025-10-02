@@ -1,5 +1,5 @@
 // src/components/Dashboard/Charts/HourlyTrendChart.jsx
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const HourlyTrendChart = ({ data = [], loading = false }) => {
@@ -9,26 +9,57 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
     denied: true
   });
 
-  // Safe data handling
-  const chartData = Array.isArray(data) && data.length > 0 ? data :
-    Array.from({ length: 24 }, (_, hour) => ({
-      hour: `${hour}:00`,
-      hourThai: `${hour.toString().padStart(2, '0')}:00 น.`,
-      count: 0,
-      success: 0,
-      denied: 0
-    }));
+  // View mode: percent (0-100) or absolute counts
+  const [viewMode, setViewMode] = useState('percent'); // 'percent' | 'count'
 
-  // หาค่าสูงสุดในข้อมูลเพื่อใช้ปรับ domain (เฉพาะเส้นที่แสดง)
-  const maxValue = Math.max(
-    ...chartData.map(item => Math.max(
-      visibleLines.success ? (parseInt(item.success) || 0) : 0,
-      visibleLines.denied ? (parseInt(item.denied) || 0) : 0
-    ))
-  );
+  // Build derived data: convert counts to percentages and add hour range label
+  const chartData = useMemo(() => {
+    const base = (Array.isArray(data) && data.length > 0)
+      ? data
+      : Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0, success: 0, denied: 0 }));
+
+    return base.map((it) => {
+      const hNum = typeof it.hour === 'number' ? it.hour : parseInt(String(it.hour).split(':')[0], 10) || 0;
+      const next = (hNum + 1) % 24;
+      const hh = String(hNum).padStart(2, '0');
+      const nn = String(next).padStart(2, '0');
+      const total = (parseInt(it.count) || 0) || ((parseInt(it.success) || 0) + (parseInt(it.denied) || 0));
+      const s = parseInt(it.success) || 0;
+      const d = parseInt(it.denied) || 0;
+      const successPct = total > 0 ? (s / total) * 100 : 0;
+      const deniedPct = total > 0 ? (d / total) * 100 : 0;
+      return {
+        ...it,
+        hour: `${hh}.00 - ${nn}.00`,
+        total,
+        success: s,
+        denied: d,
+        successPct: Math.round(successPct * 10) / 10,
+        deniedPct: Math.round(deniedPct * 10) / 10,
+      };
+    });
+  }, [data]);
+
+  // Compute dynamic Y domain for count mode
+  const yMaxPadded = useMemo(() => {
+    // Always use a p95-based padded max to avoid outliers making the chart flat
+    if (viewMode === 'percent') return 100;
+    const vals = [];
+    chartData.forEach(it => {
+      vals.push(Number(it.success || 0));
+      vals.push(Number(it.denied || 0));
+    });
+    const sorted = vals.filter(v => Number.isFinite(v)).sort((a,b)=>a-b);
+    const p95 = sorted.length ? sorted[Math.floor(sorted.length*0.95)] : 0;
+    const padded = Math.ceil((p95 || 10) * 1.1);
+    return Math.max(10, padded);
+  }, [chartData, viewMode]);
+
+  // Axis domain based on mode
+  const yDomain = viewMode === 'percent' ? [0, 100] : [0, yMaxPadded];
 
   // คำนวณสถิติสำหรับแสดงผล
-  const totalCount = chartData.reduce((sum, item) => sum + (parseInt(item.count) || 0), 0);
+  const totalCount = chartData.reduce((sum, item) => sum + (parseInt(item.total) || 0), 0);
   const totalSuccess = chartData.reduce((sum, item) => sum + (parseInt(item.success) || 0), 0);
   const totalDenied = chartData.reduce((sum, item) => sum + (parseInt(item.denied) || 0), 0);
   const successRate = totalCount > 0 ? ((totalSuccess / totalCount) * 100).toFixed(1) : 0;
@@ -68,9 +99,25 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
             <h3 className="text-xl font-bold text-gray-800 mb-2">การเข้าถึงตามช่วงเวลา (24 ชั่วโมง)</h3>
             <p className="text-gray-500 text-sm">วิเคราะห์แนวโน้มการใช้งานตลอด 24 ชั่วโมง</p>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-green-600">{successRate}%</div>
-            <div className="text-xs text-gray-500">อัตราสำเร็จ</div>
+          <div className="text-right space-y-1">
+            <div className="inline-flex items-center gap-1 border rounded-md bg-white px-1.5 py-1 text-xs">
+              <button
+                className={`px-2 py-0.5 rounded ${viewMode==='percent' ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
+                onClick={()=>setViewMode('percent')}
+                title="สัดส่วน (%)"
+              >เปอร์เซ็นต์</button>
+              <button
+                className={`px-2 py-0.5 rounded ${viewMode==='count' ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
+                onClick={()=>setViewMode('count')}
+                title="จำนวน (ครั้ง)"
+              >จำนวน</button>
+            </div>
+            {viewMode==='percent' && (
+              <div>
+                <div className="text-2xl font-bold text-green-600">{successRate}%</div>
+                <div className="text-xs text-gray-500">อัตราสำเร็จ</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -87,7 +134,7 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
         </div>
       </div>
 
-      {chartData.every(item => (parseInt(item.count) || 0) === 0) ? (
+      {chartData.every(item => (parseInt(item.total) || 0) === 0) ? (
         <div className="h-64 flex items-center justify-center text-gray-500">
           <div className="text-center">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4 mx-auto">
@@ -125,21 +172,26 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
                 tick={{ fontSize: 11, fill: '#64748b', fontWeight: 'bold' }}
                 tickLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
                 axisLine={{ stroke: '#cbd5e1', strokeWidth: 2 }}
-                domain={[0, maxValue > 0 ? Math.ceil(maxValue * 1.1) : 100]}
-                tickFormatter={(value) => value.toLocaleString('th-TH')}
+                domain={yDomain}
+                tickFormatter={(value) => viewMode==='percent' ? `${value}%` : value.toLocaleString('th-TH')}
               />
 
               <Tooltip
-                formatter={(value, name) => [
-                  `${value.toLocaleString('th-TH')} ครั้ง`,
-                  name === 'success' ? 'เข้าถึงสำเร็จ' :
-                    name === 'denied' ? 'ถูกปฏิเสธ' : name
-                ]}
+                formatter={(value, name, props) => {
+                  if (viewMode==='percent') {
+                    return [`${Number(value).toFixed(1)}%`, name === 'successPct' ? 'อัตราสำเร็จ' : name === 'deniedPct' ? 'อัตราปฏิเสธ' : name];
+                  }
+                  const key = name === 'successPct' ? 'success' : name === 'deniedPct' ? 'denied' : name;
+                  const raw = props?.payload?.[key] ?? value;
+                  return [Number(raw || 0).toLocaleString('th-TH'), key==='success' ? 'สำเร็จ' : key==='denied' ? 'ปฏิเสธ' : name];
+                }}
                 labelFormatter={(label, payload) => {
                   const item = payload?.[0]?.payload;
-                  const total = (item?.success || 0) + (item?.denied || 0);
-                  const rate = total > 0 ? ((item?.success / total) * 100).toFixed(1) : 0;
-                  return `🕐 เวลา ${label} น. (รวม: ${total.toLocaleString('th-TH')} ครั้ง | อัตราสำเร็จ: ${rate}%)`;
+                  const total = item?.total || 0;
+                  const rate = total > 0 ? (((item?.success || 0) / total) * 100).toFixed(1) : 0;
+                  return viewMode==='percent'
+                    ? `🕐 เวลา ${label} (รวม: ${total.toLocaleString('th-TH')} ครั้ง | อัตราสำเร็จ: ${rate}%)`
+                    : `🕐 เวลา ${label} (รวม: ${total.toLocaleString('th-TH')} ครั้ง)`;
                 }}
                 contentStyle={{
                   backgroundColor: '#ffffff',
@@ -156,7 +208,7 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
               {visibleLines.success && (
                 <Line
                   type="monotone"
-                  dataKey="success"
+                  dataKey={viewMode==='percent' ? 'successPct' : 'success'}
                   stroke="#10B981"
                   strokeWidth={4}
                   strokeOpacity={1}
@@ -168,14 +220,14 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
                     fill: '#ffffff',
                     filter: 'drop-shadow(0px 4px 8px rgba(16, 185, 129, 0.4))'
                   }}
-                  name="success"
+                  name="successPct"
                 />
               )}
 
               {visibleLines.denied && (
                 <Line
                   type="monotone"
-                  dataKey="denied"
+                  dataKey={viewMode==='percent' ? 'deniedPct' : 'denied'}
                   stroke="#EF4444"
                   strokeWidth={4}
                   strokeOpacity={1}
@@ -187,7 +239,7 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
                     fill: '#ffffff',
                     filter: 'drop-shadow(0px 4px 8px rgba(239, 68, 68, 0.4))'
                   }}
-                  name="denied"
+                  name="deniedPct"
                 />
               )}
             </LineChart>
@@ -226,9 +278,9 @@ const HourlyTrendChart = ({ data = [], loading = false }) => {
           รวมทั้งหมด: <span className="font-bold text-gray-800">{totalCount.toLocaleString('th-TH')}</span> ครั้ง
           | ช่วงเวลาที่ใช้งานมากที่สุด: <span className="font-bold text-blue-600">
             {chartData.reduce((max, item) =>
-              (parseInt(item.count) || 0) > (parseInt(max.count) || 0) ? item : max,
+              (parseInt(item.total) || 0) > (parseInt(max.total) || 0) ? item : max,
               chartData[0] || {}
-            )?.hour || ''} น.
+            )?.hour || ''}
           </span>
         </p>
       </div>

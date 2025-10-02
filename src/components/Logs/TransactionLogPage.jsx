@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Download, ChevronDown, ChevronUp, Calendar, Check, X, ArrowUp, ArrowDown, User, Globe, Upload } from 'lucide-react';
+import { Search, Download, ChevronDown, ChevronUp, Calendar, Check, X, ArrowUp, ArrowDown, User, Globe, Upload, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import QuickInsights from './QuickInsights.jsx';
 import apiService from '../../services/apiService';
 
@@ -83,6 +83,24 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
   const [logsCollapsed, setLogsCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
 
+  // Advanced filters
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [locations, setLocations] = useState([]); // options
+  const [directions, setDirections] = useState([]);
+  const [userTypes, setUserTypes] = useState([]);
+  const [doors, setDoors] = useState([]);
+
+  const [selectedLocations, setSelectedLocations] = useState([]);
+  const [selectedDirections, setSelectedDirections] = useState([]);
+  const [selectedUserTypes, setSelectedUserTypes] = useState([]);
+  const [selectedDoors, setSelectedDoors] = useState([]);
+
+  // Quick search for long lists
+  const [locQuery, setLocQuery] = useState('');
+  const [dirQuery, setDirQuery] = useState('');
+  const [utQuery, setUtQuery] = useState('');
+  const [doorQuery, setDoorQuery] = useState('');
+
   const params = useMemo(() => {
     const base = { page, limit, sort: sort.column, order: sort.order };
     if (search?.trim()) base.search = search.trim();
@@ -97,8 +115,12 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
       if (r.startDate) base.startDate = r.startDate;
       if (r.endDate) base.endDate = r.endDate;
     }
+    if (selectedLocations.length > 0) base.location = selectedLocations;
+    if (selectedDirections.length > 0) base.direction = selectedDirections;
+    if (selectedUserTypes.length > 0) base.userType = selectedUserTypes;
+    if (selectedDoors.length > 0) base.doors = selectedDoors;
     return base;
-  }, [page, limit, sort, search, action, datePreset, customStart, customEnd]);
+  }, [page, limit, sort, search, action, datePreset, customStart, customEnd, selectedLocations, selectedDirections, selectedUserTypes, selectedDoors]);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -117,7 +139,49 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
   useEffect(() => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.page, params.limit, params.sort, params.order, params.search, params.allow, params.startDate, params.endDate]);
+  }, [JSON.stringify(params)]);
+
+  // Load/refresh filter option counts based on current filters (faceted)
+  useEffect(() => {
+    let mounted = true;
+    const normalizeList = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map((item) => {
+        if (item == null) return null;
+        if (typeof item === 'string') return { value: item, label: item, count: undefined };
+        const value = item.value ?? item.key ?? item.id ?? item.name ?? item.label;
+        const label = item.label ?? String(value ?? '');
+        const count = item.count ?? item.total ?? item.qty ?? item.quantity ?? item.num ?? item.cnt;
+        return { value, label, count };
+      }).filter(Boolean);
+    };
+    (async () => {
+      try {
+        // Base facet params from current filters (exclude paging/sort)
+        const base = { ...params };
+        delete base.page; delete base.limit; delete base.sort; delete base.order;
+
+        // For true faceting, exclude the facet itself from its own query
+        const paramsForLocations = { ...base }; delete paramsForLocations.location;
+        const paramsForDirections = { ...base }; delete paramsForDirections.direction;
+        const paramsForUserTypes = { ...base }; delete paramsForUserTypes.userType;
+        const paramsForDoors = { ...base }; delete paramsForDoors.doors;
+
+        const [locRes, dirRes, utRes, doorRes] = await Promise.all([
+          apiService.getLocations(paramsForLocations).catch(()=>({ locations: [] })),
+          apiService.getDirections(paramsForDirections).catch(()=>({ directions: [] })),
+          apiService.getUserTypes(paramsForUserTypes).catch(()=>({ userTypes: [] })),
+          apiService.getDoors(paramsForDoors).catch(()=>({ doors: [] })),
+        ]);
+        if (!mounted) return;
+        setLocations(normalizeList(locRes.locations || locRes.items || []));
+        setDirections(normalizeList(dirRes.directions || dirRes.items || []));
+        setUserTypes(normalizeList(utRes.userTypes || utRes.items || []));
+        setDoors(normalizeList(doorRes.doors || doorRes.items || []));
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, [JSON.stringify(params)]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -125,6 +189,8 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
     setPage(1);
     fetchLogs();
   };
+
+  // No auto-refresh: this page is not real-time by design
 
   const handleExport = async () => {
     try {
@@ -165,13 +231,54 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
     sort.column === column ? (sort.order === 'ASC' ? <ArrowUp className="w-3 h-3"/> : <ArrowDown className="w-3 h-3"/>) : <ArrowUp className="w-3 h-3 opacity-0"/>
   );
 
+  const highlight = (text) => {
+    const q = (search || '').trim();
+    if (!q) return text || '-';
+    try {
+      const pattern = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const parts = String(text || '-').split(pattern);
+      const matches = String(text || '-').match(pattern);
+      if (!matches) return text || '-';
+      const out = [];
+      parts.forEach((p, i) => {
+        out.push(p);
+        if (i < parts.length - 1) out.push(<mark key={i} className="bg-yellow-200 text-gray-900 rounded px-0.5">{matches[i]}</mark>);
+      });
+      return <span>{out}</span>;
+    } catch { return text || '-'; }
+  };
+
+  const SkeletonRow = () => (
+    <tr className="animate-pulse">
+      <td className="px-2 py-3"><div className="h-4 w-5 bg-gray-200 rounded"/></td>
+      <td className="px-4 py-3"><div className="h-4 w-36 bg-gray-200 rounded"/></td>
+      <td className="px-4 py-3"><div className="h-4 w-40 bg-gray-200 rounded"/></td>
+      <td className="px-4 py-3"><div className="h-4 w-44 bg-gray-200 rounded"/></td>
+      <td className="px-4 py-3"><div className="h-4 w-56 bg-gray-200 rounded"/></td>
+      <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded"/></td>
+    </tr>
+  );
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Transaction Log</h1>
       </div>
 
-      <div className="bg-white rounded-lg border shadow-sm p-4">
+      <div className="bg-white rounded-xl border shadow-sm p-4 ring-1 ring-black/5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-medium text-gray-700">ตัวกรอง</div>
+          <div className="text-xs text-gray-600">ใช้งานอยู่ {
+            [search?.trim()?1:0,
+             action!=='all'?1:0,
+             (datePreset!=='all' || (datePreset==='custom' && customStart && customEnd))?1:0,
+             selectedLocations.length>0?1:0,
+             selectedDirections.length>0?1:0,
+             selectedUserTypes.length>0?1:0,
+             selectedDoors.length>0?1:0
+            ].reduce((a,b)=>a+b,0)
+          } รายการ</div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
           <div>
             <label className="block text-sm text-gray-600 mb-1">ค้นหา</label>
@@ -179,7 +286,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
               <div className="flex-1 relative">
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  className="w-full pl-9 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-9 pr-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   placeholder="ชื่อ, อีเมล, ไอพี, อื่นๆ"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -193,7 +300,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
             <label className="block text-sm text-gray-600 mb-1">Action Type</label>
             <div className="relative">
               <select
-                className="w-full appearance-none pr-8 pl-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full appearance-none pr-8 pl-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 value={action}
                 onChange={(e) => setAction(e.target.value)}
               >
@@ -209,7 +316,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
             <label className="block text-sm text-gray-600 mb-1">ช่วงวันที่</label>
             <div className="relative">
               <select
-                className="w-full appearance-none pr-8 pl-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full appearance-none pr-8 pl-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 value={datePreset}
                 onChange={(e) => setDatePreset(e.target.value)}
               >
@@ -220,10 +327,10 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
           </div>
 
           <div className="flex gap-2">
-            <button onClick={doSearch} className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-black">
+            <button onClick={doSearch} className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-black text-sm">
               <Search className="w-4 h-4"/> ค้นหา
             </button>
-            <button onClick={handleExport} className="inline-flex items-center justify-center gap-2 px-3 py-2 border rounded-md hover:bg-gray-50">
+            <button onClick={handleExport} className="inline-flex items-center justify-center gap-2 px-3 py-2 border rounded-md hover:bg-gray-50 text-sm">
               <Download className="w-4 h-4"/> ส่งออกเป็น excel
             </button>
           </div>
@@ -241,14 +348,227 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
             </div>
           </div>
         )}
+
+        {/* Advanced filters */}
+        <div className="mt-3">
+          <button
+            onClick={() => setShowAdvanced(s => !s)}
+            className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1"
+          >
+            {showAdvanced ? <><ChevronUp className="w-4 h-4"/> ซ่อนตัวกรองเพิ่มเติม</> : <><ChevronDown className="w-4 h-4"/> ตัวกรองเพิ่มเติม</>}
+          </button>
+          {showAdvanced && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-3">
+              {/* Locations */}
+              <div className="rounded-xl border bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold text-gray-800">สถานที่</label>
+                  <div className="flex items-center gap-2">
+                    {selectedLocations.length>0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">{selectedLocations.length} เลือก</span>
+                    )}
+                    <button className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50" onClick={()=>setSelectedLocations([])}>ล้าง</button>
+                  </div>
+                </div>
+                {/* chips */}
+                <div className="min-h-[24px] mb-2">
+                  {selectedLocations.length>0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedLocations.slice(0,4).map(v => (
+                        <button key={v} className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-200 hover:bg-blue-100" onClick={()=>setSelectedLocations(selectedLocations.filter(x=>x!==v))} title="นำออก">
+                          {v}
+                        </button>
+                      ))}
+                      {selectedLocations.length>4 && (
+                        <span className="text-xs text-gray-500">+{selectedLocations.length-4}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input value={locQuery} onChange={(e)=>setLocQuery(e.target.value)} placeholder="ค้นหา..." className="w-full pl-7 pr-2 py-1.5 border rounded-md text-xs focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="max-h-48 overflow-auto pr-1 space-y-1">
+                  {(locations||[]).filter(o => (o.label||o.value).toLowerCase().includes(locQuery.toLowerCase())).map(o => {
+                    const checked = selectedLocations.includes(o.value);
+                    return (
+                      <label key={o.value} className="group flex items-center gap-2 py-1.5 px-2 rounded-md border hover:bg-gray-50 cursor-pointer">
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <input type="checkbox" className="accent-blue-600" checked={checked} onChange={(e)=>{
+                            setSelectedLocations(prev => e.target.checked ? [...new Set([...prev, o.value])] : prev.filter(v=>v!==o.value));
+                          }} />
+                          <span className="text-sm text-gray-800 truncate">{o.label || o.value}</span>
+                        </span>
+                        {o.count ? (<span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{o.count.toLocaleString()}</span>) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Directions */}
+              <div className="rounded-xl border bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold text-gray-800">ทิศทาง</label>
+                  <div className="flex items-center gap-2">
+                    {selectedDirections.length>0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">{selectedDirections.length} เลือก</span>
+                    )}
+                    <button className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50" onClick={()=>setSelectedDirections([])}>ล้าง</button>
+                  </div>
+                </div>
+                <div className="min-h-[24px] mb-2">
+                  {selectedDirections.length>0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedDirections.map(v => (
+                        <button key={v} className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-200 hover:bg-blue-100" onClick={()=>setSelectedDirections(selectedDirections.filter(x=>x!==v))}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input value={dirQuery} onChange={(e)=>setDirQuery(e.target.value)} placeholder="ค้นหา..." className="w-full pl-7 pr-2 py-1.5 border rounded-md text-xs focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="max-h-48 overflow-auto pr-1 space-y-1">
+                  {(directions||[]).filter(o => (o.label||o.value).toLowerCase().includes(dirQuery.toLowerCase())).map(o => {
+                    const checked = selectedDirections.includes(o.value);
+                    return (
+                      <label key={o.value} className="group flex items-center gap-2 py-1.5 px-2 rounded-md border hover:bg-gray-50 cursor-pointer">
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <input type="checkbox" className="accent-blue-600" checked={checked} onChange={(e)=>{
+                            setSelectedDirections(prev => e.target.checked ? [...new Set([...prev, o.value])] : prev.filter(v=>v!==o.value));
+                          }} />
+                          <span className="text-sm text-gray-800 truncate">{o.label || o.value}</span>
+                        </span>
+                        {o.count ? (<span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{o.count.toLocaleString()}</span>) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* User Types */}
+              <div className="rounded-xl border bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold text-gray-800">ประเภทผู้ใช้</label>
+                  <div className="flex items-center gap-2">
+                    {selectedUserTypes.length>0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">{selectedUserTypes.length} เลือก</span>
+                    )}
+                    <button className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50" onClick={()=>setSelectedUserTypes([])}>ล้าง</button>
+                  </div>
+                </div>
+                <div className="min-h-[24px] mb-2">
+                  {selectedUserTypes.length>0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedUserTypes.map(v => (
+                        <button key={v} className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-200 hover:bg-blue-100" onClick={()=>setSelectedUserTypes(selectedUserTypes.filter(x=>x!==v))}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input value={utQuery} onChange={(e)=>setUtQuery(e.target.value)} placeholder="ค้นหา..." className="w-full pl-7 pr-2 py-1.5 border rounded-md text-xs focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="max-h-48 overflow-auto pr-1 space-y-1">
+                  {(userTypes||[]).filter(o => (o.label||o.value).toLowerCase().includes(utQuery.toLowerCase())).map(o => {
+                    const checked = selectedUserTypes.includes(o.value);
+                    return (
+                      <label key={o.value} className="group flex items-center gap-2 py-1.5 px-2 rounded-md border hover:bg-gray-50 cursor-pointer">
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <input type="checkbox" className="accent-blue-600" checked={checked} onChange={(e)=>{
+                            setSelectedUserTypes(prev => e.target.checked ? [...new Set([...prev, o.value])] : prev.filter(v=>v!==o.value));
+                          }} />
+                          <span className="text-sm text-gray-800 truncate">{o.label || o.value}</span>
+                        </span>
+                        {o.count ? (<span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{o.count.toLocaleString()}</span>) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Doors */}
+              <div className="rounded-xl border bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-semibold text-gray-800">ประตู</label>
+                  <div className="flex items-center gap-2">
+                    {selectedDoors.length>0 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">{selectedDoors.length} เลือก</span>
+                    )}
+                    <button className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50" onClick={()=>setSelectedDoors([])}>ล้าง</button>
+                  </div>
+                </div>
+                <div className="min-h-[24px] mb-2">
+                  {selectedDoors.length>0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {selectedDoors.slice(0,4).map(v => (
+                        <button key={v} className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-200 hover:bg-blue-100" onClick={()=>setSelectedDoors(selectedDoors.filter(x=>x!==v))}>
+                          {v}
+                        </button>
+                      ))}
+                      {selectedDoors.length>4 && (
+                        <span className="text-xs text-gray-500">+{selectedDoors.length-4}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="relative mb-2">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input value={doorQuery} onChange={(e)=>setDoorQuery(e.target.value)} placeholder="ค้นหา..." className="w-full pl-7 pr-2 py-1.5 border rounded-md text-xs focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="max-h-48 overflow-auto pr-1 space-y-1">
+                  {(doors||[]).filter(o => (o.label||o.value).toLowerCase().includes(doorQuery.toLowerCase())).map(o => {
+                    const checked = selectedDoors.includes(o.value);
+                    return (
+                      <label key={o.value} className="group flex items-center gap-2 py-1.5 px-2 rounded-md border hover:bg-gray-50 cursor-pointer">
+                        <span className="inline-flex items-center gap-2 min-w-0">
+                          <input type="checkbox" className="accent-blue-600" checked={checked} onChange={(e)=>{
+                            setSelectedDoors(prev => e.target.checked ? [...new Set([...prev, o.value])] : prev.filter(v=>v!==o.value));
+                          }} />
+                          <span className="text-sm text-gray-800 truncate">{o.label || o.value}</span>
+                        </span>
+                        {o.count ? (<span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{o.count.toLocaleString()}</span>) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="xl:col-span-4 flex gap-2">
+                <button onClick={()=>{ setSelectedLocations([]); setSelectedDirections([]); setSelectedUserTypes([]); setSelectedDoors([]); setPage(1); }}
+                  className="inline-flex items-center gap-2 px-3 py-2 border rounded-md text-sm bg-white hover:bg-gray-50">
+                  <X className="w-4 h-4"/> เคลียร์ตัวกรองเพิ่มเติม
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border shadow-sm">
+        {error && (
+          <div className="mx-4 mt-4 mb-0 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1">{error}</div>
+            <button onClick={()=>setError(null)} className="text-red-500 hover:text-red-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <h3 className="font-semibold text-gray-900">รายการ Log</h3>
           <button
             onClick={() => setLogsCollapsed(v => !v)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border rounded-md bg-white hover:bg-gray-50"
+            title="พับ/แสดงรายการ"
           >
             {logsCollapsed ? (<>
               <ChevronDown className="w-4 h-4" /> แสดงรายการ
@@ -260,30 +580,44 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
         {!logsCollapsed && (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600">
+            <thead className="text-gray-600">
+              <tr className="bg-gray-50">
                 <th className="px-2 py-3 text-left w-8"></th>
-                <th className="px-4 py-3 text-left cursor-pointer select-none" onClick={()=>setSortColumn('Date Time')}>
+                <th className="px-4 py-3 text-left cursor-pointer select-none sticky top-0 z-10 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80" onClick={()=>setSortColumn('Date Time')}>
                   <div className="flex items-center gap-1">วันที่ / เวลา <SortIcon column="Date Time"/></div>
                 </th>
-                <th className="px-4 py-3 text-left">ผู้ใช้งาน (Card Name)</th>
-                <th className="px-4 py-3 text-left">ประตู (Door)</th>
-                <th className="px-4 py-3 text-left">เหตุผล/ความเคลื่อนไหว</th>
-                <th className="px-4 py-3 text-left">ผลลัพธ์</th>
+                <th className="px-4 py-3 text-left sticky top-0 z-10 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80">ผู้ใช้งาน (Card Name)</th>
+                <th className="px-4 py-3 text-left sticky top-0 z-10 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80">ประตู (Door)</th>
+                <th className="px-4 py-3 text-left sticky top-0 z-10 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80">เหตุผล/ความเคลื่อนไหว</th>
+                <th className="px-4 py-3 text-left sticky top-0 z-10 bg-gray-50/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80">ผลลัพธ์</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y">
               {loading ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">กำลังโหลด...</td></tr>
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">ไม่พบข้อมูล</td></tr>
+                <tr>
+                  <td colSpan={6} className="px-6 py-16 text-center">
+                    <div className="inline-flex flex-col items-center gap-2 text-gray-500">
+                      <Search className="w-6 h-6" />
+                      <div className="text-sm">ไม่พบข้อมูลที่ตรงกับตัวกรอง</div>
+                      <div className="text-xs">ปรับตัวกรองหรือช่วงเวลา แล้วลองใหม่</div>
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 rows.map((r, idx) => {
                   const key = rowKeyOf(r, idx);
                   const isOpen = expanded.has(key);
                   return (
                     <React.Fragment key={key}>
-                      <tr className="border-t hover:bg-gray-50">
+                      <tr className="odd:bg-white even:bg-gray-50 hover:bg-blue-50/40 transition-colors">
                         <td className="px-2 py-3 align-top">
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleExpand(key); }}
@@ -323,7 +657,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                             {clean(r['Door'] || r.door)}
                           </div>
                         </td>
-                        <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>{clean(r['Reason'] || r.reason)}</td>
+                        <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>{highlight(clean(r['Reason'] || r.reason))}</td>
                         <td className="px-4 py-3 cursor-pointer" onClick={()=>onRowClick?.(r)}>
                           {(r.allow === true || r.Allow === true || r.Allow === 't') ? (
                             <span className="inline-flex items-center gap-1 text-green-600"><Check className="w-4 h-4"/> อนุญาต</span>
@@ -335,7 +669,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                         </td>
                       </tr>
                       {isOpen && (
-                        <tr className="bg-gray-50/70">
+                        <tr className="bg-blue-50/40">
                           <td></td>
                           <td colSpan={5} className="px-4 py-3">
                             {(() => {
@@ -368,7 +702,16 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                                     </div>
                                   )}
                                   {!isEmptyish(r['Transaction ID'] || r.id) && (
-                                    <div className="mt-2 text-[11px] text-gray-500">Transaction ID: {clean(r['Transaction ID'] || r.id)}</div>
+                                    <div className="mt-2 text-[11px] text-gray-500 inline-flex items-center gap-2">
+                                      <span>Transaction ID: {clean(r['Transaction ID'] || r.id)}</span>
+                                      <button
+                                        onClick={() => { try { navigator.clipboard.writeText(String(clean(r['Transaction ID'] || r.id))); } catch {} }}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 border rounded bg-white hover:bg-gray-50"
+                                        title="คัดลอก"
+                                      >
+                                        <Copy className="w-3.5 h-3.5"/> คัดลอก
+                                      </button>
+                                    </div>
                                   )}
                                 </>
                               );
@@ -406,9 +749,13 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
           })()}
           {!logsCollapsed && (
             <div className="flex items-center gap-2">
-              <button disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="px-3 py-1 border rounded disabled:opacity-40">ก่อนหน้า</button>
-              <span>หน้า {page} / {totalPages}</span>
-              <button disabled={page>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} className="px-3 py-1 border rounded disabled:opacity-40">ถัดไป</button>
+              <button disabled={page<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="inline-flex items-center gap-1 px-3 py-1.5 border rounded-md disabled:opacity-40 bg-white hover:bg-gray-50">
+                <ChevronLeft className="w-4 h-4"/> ก่อนหน้า
+              </button>
+              <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">หน้า {page} / {totalPages}</span>
+              <button disabled={page>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} className="inline-flex items-center gap-1 px-3 py-1.5 border rounded-md disabled:opacity-40 bg-white hover:bg-gray-50">
+                ถัดไป <ChevronRight className="w-4 h-4"/>
+              </button>
             </div>
           )}
         </div>

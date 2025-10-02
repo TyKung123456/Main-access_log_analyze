@@ -3,7 +3,20 @@
 // Returns: array of { user, score, breakdown: [...], counts: {...}, lastTime, lastLocation }
 // The final score is capped at 100, acting as a "base of 100" for the suspicion score.
 
-export function computeSuspicionAll(logs = []) {
+export function computeSuspicionAll(logs = [], options = {}) {
+  const cfg = {
+    maxScore: 100,
+    weights: {
+      deniedMax: 20,      // up to 20 points from denied rate
+      offHoursMax: 10,    // up to 10 points from off-hours rate
+      weekendMax: 10,     // up to 10 points from weekend rate
+      locExtraPer: 0.5,   // +0.5 per extra location beyond threshold
+      locThreshold: 3,    // threshold before location contributes
+      deniedRateCap: 10,  // additional cap for explicit denied rate term
+    },
+    ...options,
+  };
+  const simpleMode = cfg.mode === 'simple';
   const isEmptyish = (v) => {
     if (v === undefined || v === null) return true;
     const s = String(v).trim().toLowerCase();
@@ -57,72 +70,102 @@ export function computeSuspicionAll(logs = []) {
   for (const entry of byUser.values()) {
     const breakdown = [];
 
-    // Factor: denied attempts (weight 2 per event, based on percentage)
+    if (simpleMode) {
+      // Simple mode: score = denied% only, no weights
+      const deniedRate = entry.total > 0 ? entry.denied / entry.total : 0;
+      const score = Math.round(deniedRate * 100);
+      if (entry.total > 0) {
+        breakdown.push({
+          key: 'denied',
+          label: 'ปฏิเสธ',
+          value: score,
+          detail: `เปอร์เซ็นต์การถูกปฏิเสธ (${entry.denied}/${entry.total})`,
+          contrib: score,
+        });
+      }
+      results.push({
+        user: entry.user,
+        score,
+        breakdown,
+        counts: {
+          total: entry.total,
+          denied: entry.denied,
+          offHours: entry.offHours,
+          weekend: entry.weekend,
+          uniqueLocations: entry.locations.size,
+        },
+        lastTime: entry.lastTime,
+        lastLocation: entry.lastLocation,
+      });
+      continue;
+    }
+
+    // Normal (weighted) mode
+    // Factor: denied attempts (based on percentage)
     if (entry.total > 0 && entry.denied > 0) {
       const deniedRate = entry.denied / entry.total;
-      const contrib = Math.round(deniedRate * 20 * 10) / 10; // Scale to contribute up to 20 points
+      const contrib = Math.round(deniedRate * cfg.weights.deniedMax * 10) / 10; // up to deniedMax
       breakdown.push({
         key: 'denied',
         label: 'ปฏิเสธ',
         value: Math.round(deniedRate * 100),
-        weight: 2,
+        weight: `≤${cfg.weights.deniedMax}`,
         contrib,
         detail: `เปอร์เซ็นต์การถูกปฏิเสธ (${entry.denied}/${entry.total})`
       });
     }
-
-    // Factor: off-hours access (weight 1 per event, based on percentage)
+    // Factor: off-hours access (based on percentage)
     if (entry.total > 0 && entry.offHours > 0) {
       const offHoursRate = entry.offHours / entry.total;
-      const contrib = Math.round(offHoursRate * 10 * 10) / 10; // Scale to contribute up to 10 points
+      const contrib = Math.round(offHoursRate * cfg.weights.offHoursMax * 10) / 10; // up to offHoursMax
       breakdown.push({
         key: 'offHours',
         label: 'นอกเวลา',
         value: Math.round(offHoursRate * 100),
-        weight: 1,
+        weight: `≤${cfg.weights.offHoursMax}`,
         contrib,
         detail: `เปอร์เซ็นต์การเข้าใช้งานช่วง 22:00–06:00 (${entry.offHours}/${entry.total})`
       });
     }
 
-    // Factor: weekend access (weight 1 per event, based on percentage)
+    // Factor: weekend access (based on percentage)
     if (entry.total > 0 && entry.weekend > 0) {
       const weekendRate = entry.weekend / entry.total;
-      const contrib = Math.round(weekendRate * 10 * 10) / 10; // Scale to contribute up to 10 points
+      const contrib = Math.round(weekendRate * cfg.weights.weekendMax * 10) / 10; // up to weekendMax
       breakdown.push({
         key: 'weekend',
         label: 'วันหยุด',
         value: Math.round(weekendRate * 100),
-        weight: 1,
+        weight: `≤${cfg.weights.weekendMax}`,
         contrib,
         detail: `เปอร์เซ็นต์การเข้าใช้งานในวันเสาร์/อาทิตย์ (${entry.weekend}/${entry.total})`
       });
     }
 
-    // Factor: location diversity (0.5 each after 3 locations)
+    // Factor: location diversity (+locExtraPer each after threshold)
     const uniqueLoc = entry.locations.size;
-    if (uniqueLoc > 3) {
-      const extra = uniqueLoc - 3;
-      const contrib = extra * 0.5;
+    if (uniqueLoc > cfg.weights.locThreshold) {
+      const extra = uniqueLoc - cfg.weights.locThreshold;
+      const contrib = extra * cfg.weights.locExtraPer;
       breakdown.push({
         key: 'locations',
         label: 'สถานที่หลากหลาย',
         value: uniqueLoc,
-        weight: 0.5,
+        weight: `+${cfg.weights.locExtraPer}/loc`,
         contrib,
         detail: 'จำนวนสถานที่ที่เข้าถึงมากกว่าปกติ (>3)'
       });
     }
 
-    // Factor: denied rate (scaled 0–10)
+    // Factor: denied rate (scaled 0–cap)
     const deniedRate = entry.total > 0 ? entry.denied / entry.total : 0;
-    const deniedRateContrib = Math.round(Math.min(10, deniedRate * 20) * 10) / 10; // 0..10
+    const deniedRateContrib = Math.round(Math.min(cfg.weights.deniedRateCap, deniedRate * 20) * 10) / 10;
     if (deniedRateContrib > 0) {
       breakdown.push({
         key: 'deniedRate',
         label: 'อัตราการถูกปฏิเสธ',
         value: Math.round(deniedRate * 100),
-        weight: '~',
+        weight: `≤${cfg.weights.deniedRateCap}`,
         contrib: deniedRateContrib,
         detail: 'เปอร์เซ็นต์เหตุการณ์ที่ถูกปฏิเสธ'
       });
@@ -130,7 +173,7 @@ export function computeSuspicionAll(logs = []) {
 
     // Total score (cap to 100)
     const rawScore = breakdown.reduce((s, b) => s + b.contrib, 0);
-    const score = Math.min(100, Math.round(rawScore));
+    const score = Math.min(cfg.maxScore, Math.round(rawScore));
 
     results.push({
       user: entry.user,
@@ -151,6 +194,6 @@ export function computeSuspicionAll(logs = []) {
   return results.sort((a, b) => b.score - a.score);
 }
 
-export function computeSuspicionByUser(logs = [], limit = 10) {
-  return computeSuspicionAll(logs).slice(0, limit);
+export function computeSuspicionByUser(logs = [], limit = 10, options = {}) {
+  return computeSuspicionAll(logs, options).slice(0, limit);
 }

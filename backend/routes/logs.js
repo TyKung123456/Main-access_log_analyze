@@ -28,8 +28,18 @@ const buildWhereClause = (params) => {
         paramIndex += 2;
     }
     if (params.allow !== undefined && params.allow !== null) {
+        const raw = params.allow;
+        let boolVal;
+        if (typeof raw === 'boolean') {
+            boolVal = raw;
+        } else if (typeof raw === 'number') {
+            boolVal = raw === 1;
+        } else {
+            const s = String(raw).trim().toLowerCase();
+            boolVal = (s === 'true' || s === 't' || s === '1' || s === 'yes');
+        }
         conditions.push(`"Allow" = $${paramIndex}`);
-        values.push(params.allow === 'true'); // Convert string 'true'/'false' to boolean
+        values.push(boolVal);
         paramIndex++;
     }
     if (params.location) {
@@ -114,90 +124,118 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Helper: build WHERE for facet endpoints (exclude the facet itself)
+const buildFacetWhere = (params, facetKey) => {
+    const p = { ...(params || {}) };
+    if (facetKey) delete p[facetKey];
+    return buildWhereClause(p);
+};
+
 /**
- * GET /api/logs/locations - Get distinct locations
- * ✅ FIXED: Response is now wrapped in a { locations: [...] } object.
+ * GET /api/logs/locations - Get distinct locations (faceted)
  */
 router.get('/locations', async (req, res) => {
     try {
-        const result = await query(`
-            SELECT "Location" as value, "Location" as label, COUNT(*) as count 
-            FROM "public"."real_log_analyze" 
-            WHERE "Location" IS NOT NULL AND "Location" != '' 
-            GROUP BY 1, 2 ORDER BY 3 DESC
-        `);
+        const where = buildFacetWhere(req.query, 'location');
+        const nn = `"Location" IS NOT NULL AND "Location" <> ''`;
+        const whereSql = where.clause ? `${where.clause} AND ${nn}` : `WHERE ${nn}`;
+        const result = await query(
+            `SELECT "Location" as value, "Location" as label, COUNT(*)::int as count 
+             FROM "public"."real_log_analyze" 
+             ${whereSql}
+             GROUP BY 1, 2 ORDER BY 3 DESC`,
+            where.values
+        );
         res.json({ locations: result.rows });
     } catch (error) {
+        console.error('Failed to fetch locations:', error);
         res.status(500).json({ error: 'Failed to fetch locations' });
     }
 });
 
 /**
- * GET /api/logs/directions - Get distinct directions
- * ✅ FIXED: Response is now wrapped in a { directions: [...] } object.
+ * GET /api/logs/directions - Get distinct directions (faceted)
  */
 router.get('/directions', async (req, res) => {
     try {
-        const result = await query(`
-            SELECT "Direction" as value, 
-                   CASE WHEN "Direction" = 'IN' THEN 'เข้า (IN)' ELSE 'ออก (OUT)' END as label,
-                   COUNT(*) as count
-            FROM "public"."real_log_analyze" 
-            WHERE "Direction" IS NOT NULL AND "Direction" != '' 
-            GROUP BY 1, 2 ORDER BY 3 DESC
-        `);
+        const where = buildFacetWhere(req.query, 'direction');
+        const nn = `"Direction" IS NOT NULL AND "Direction" <> ''`;
+        const whereSql = where.clause ? `${where.clause} AND ${nn}` : `WHERE ${nn}`;
+        const result = await query(
+            `SELECT "Direction" as value, 
+                    CASE WHEN "Direction" = 'IN' THEN 'เข้า (IN)' ELSE 'ออก (OUT)' END as label,
+                    COUNT(*)::int as count
+             FROM "public"."real_log_analyze" 
+             ${whereSql}
+             GROUP BY 1, 2 ORDER BY 3 DESC`,
+            where.values
+        );
         res.json({ directions: result.rows });
     } catch (error) {
+        console.error('Failed to fetch directions:', error);
         res.status(500).json({ error: 'Failed to fetch directions' });
     }
 });
 
 /**
- * GET /api/logs/user-types - Get distinct user types
- * ✅ FIXED: Response is now wrapped in a { userTypes: [...] } object.
+ * GET /api/logs/user-types - Get distinct user types (faceted)
  */
 router.get('/user-types', async (req, res) => {
     try {
-        const result = await query(`
-            SELECT "User Type" as value, "User Type" as label, COUNT(*) as count
-            FROM "public"."real_log_analyze" 
-            WHERE "User Type" IS NOT NULL AND "User Type" != '' 
-            GROUP BY 1, 2 ORDER BY 3 DESC
-        `);
+        const where = buildFacetWhere(req.query, 'userType');
+        const nn = `"User Type" IS NOT NULL AND "User Type" <> ''`;
+        const whereSql = where.clause ? `${where.clause} AND ${nn}` : `WHERE ${nn}`;
+        const result = await query(
+            `SELECT "User Type" as value, "User Type" as label, COUNT(*)::int as count
+             FROM "public"."real_log_analyze" 
+             ${whereSql}
+             GROUP BY 1, 2 ORDER BY 3 DESC`,
+            where.values
+        );
         res.json({ userTypes: result.rows });
     } catch (error) {
+        console.error('Failed to fetch user types:', error);
         res.status(500).json({ error: 'Failed to fetch user types' });
     }
 });
 
 /**
- * GET /api/logs/doors - Get distinct doors
+ * GET /api/logs/doors - Get distinct doors (faceted)
  */
 router.get('/doors', async (req, res) => {
     try {
-        const result = await query(`
-            SELECT "Door" as value, "Door" as label, COUNT(*) as count 
-            FROM "public"."real_log_analyze" 
-            WHERE "Door" IS NOT NULL AND "Door" != '' 
-            GROUP BY 1, 2 ORDER BY 3 DESC
-        `);
+        const where = buildFacetWhere(req.query, 'doors');
+        const nn = `"Door" IS NOT NULL AND "Door" <> ''`;
+        const whereSql = where.clause ? `${where.clause} AND ${nn}` : `WHERE ${nn}`;
+        const result = await query(
+            `SELECT "Door" as value, "Door" as label, COUNT(*)::int as count 
+             FROM "public"."real_log_analyze" 
+             ${whereSql}
+             GROUP BY 1, 2 ORDER BY 3 DESC`,
+            where.values
+        );
         res.json({ doors: result.rows });
     } catch (error) {
+        console.error('Failed to fetch doors:', error);
         res.status(500).json({ error: 'Failed to fetch doors' });
     }
 });
 
 /**
- * GET /api/logs/severity-levels - Get distinct severity levels
+ * GET /api/logs/severity-levels - Get distinct severity levels (faceted)
  */
 router.get('/severity-levels', async (req, res) => {
     try {
-        const result = await query(`
-            SELECT "severity" as value, "severity" as label, COUNT(*) as count 
-            FROM "public"."real_log_analyze" 
-            WHERE "severity" IS NOT NULL AND "severity" != '' 
-            GROUP BY 1, 2 ORDER BY 3 DESC
-        `);
+        const where = buildFacetWhere(req.query, 'severities');
+        const nn = `"severity" IS NOT NULL AND "severity" <> ''`;
+        const whereSql = where.clause ? `${where.clause} AND ${nn}` : `WHERE ${nn}`;
+        const result = await query(
+            `SELECT "severity" as value, "severity" as label, COUNT(*)::int as count 
+             FROM "public"."real_log_analyze" 
+             ${whereSql}
+             GROUP BY 1, 2 ORDER BY 3 DESC`,
+            where.values
+        );
         res.json({ severityLevels: result.rows });
     } catch (error) {
         console.error('Error fetching severity levels:', error);

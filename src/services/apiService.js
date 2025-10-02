@@ -296,24 +296,24 @@ class ApiService {
   }
 
   // Filter Options
-  async getLocations() {
-    return this.request('/api/logs/locations');
+  async getLocations(params) {
+    return this.request('/api/logs/locations', 'GET', null, params);
   }
 
-  async getDirections() {
-    return this.request('/api/logs/directions');
+  async getDirections(params) {
+    return this.request('/api/logs/directions', 'GET', null, params);
   }
 
-  async getUserTypes() {
-    return this.request('/api/logs/user-types');
+  async getUserTypes(params) {
+    return this.request('/api/logs/user-types', 'GET', null, params);
   }
 
-  async getDevices() {
-    return this.request('/api/logs/devices');
+  async getDevices(params) {
+    return this.request('/api/logs/devices', 'GET', null, params);
   }
 
-  async getDoors() {
-    return this.request('/api/logs/doors');
+  async getDoors(params) {
+    return this.request('/api/logs/doors', 'GET', null, params);
   }
 
   async getSeverityLevels() {
@@ -351,6 +351,15 @@ class ApiService {
 
   async getSecurityAlerts(params) {
     return this.request('/api/stats/security-alerts', 'GET', null, params);
+  }
+
+  // Per-user aggregated stats
+  async getUserSummary(params) {
+    return this.request('/api/stats/user', 'GET', null, params);
+  }
+
+  async getTopUsers(params) {
+    return this.request('/api/stats/users-top', 'GET', null, params);
   }
 
   // Charts

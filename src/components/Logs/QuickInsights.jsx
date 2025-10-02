@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import apiService from '../../services/apiService';
 import HourlyTrendChart from '../Dashboard/Charts/HourlyTrendChart.jsx';
 import LocationDistributionChart from '../Dashboard/Charts/LocationDistributionChart.jsx';
-import DirectionChart from '../Dashboard/Charts/DirectionChart.jsx';
+// import DirectionChart from '../Dashboard/Charts/DirectionChart.jsx';
 
 const QuickInsights = ({ params }) => {
   const isEmptyish = (v) => {
@@ -18,43 +18,71 @@ const QuickInsights = ({ params }) => {
   const [locationFocus, setLocationFocus] = useState('all');
   const [locDetail, setLocDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [directionTS, setDirectionTS] = useState([]);
+  const [showAllReasons, setShowAllReasons] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
-        const [h, l, d] = await Promise.all([
+        const [h, l] = await Promise.all([
           apiService.getChartData('hourly', params),
           apiService.getChartData('location', params),
-          apiService.getChartData('direction', params),
         ]);
         if (!mounted) return;
-        const dirData = Array.isArray(d?.data) ? d.data : [];
-        let finalDir = dirData;
-        if (dirData.length === 0) {
-          try {
-            // Fallback: compute from logs when chart API returns empty
-            const logRes = await apiService.getLogs({ ...(params||{}), page: 1, limit: 1000 });
-            const rows = Array.isArray(logRes?.data) ? logRes.data : [];
-            const counts = rows.reduce((acc, r) => {
-              const raw = (r.Direction || r.direction || '').toString().trim().toUpperCase();
-              const val = raw === 'INBOUND' || raw === 'เข้า' ? 'IN' : raw === 'OUTBOUND' || raw === 'ออก' ? 'OUT' : raw;
-              if (val === 'IN' || val === 'OUT') acc[val] = (acc[val] || 0) + 1;
-              return acc;
-            }, {});
-            finalDir = ['IN','OUT'].filter(k => counts[k] > 0).map(k => ({ direction: k, count: counts[k] }));
-          } catch(e) {
-            finalDir = [];
-          }
-        }
         setHourly({ data: h?.data || [], loading: false });
         setLocation({ data: l?.data || [], loading: false });
-        setDirection({ data: finalDir, loading: false });
+        // Direction view removed
+
+        // Build time series (hourly IN/OUT, today vs average) from logs
+        try {
+          const logRes = await apiService.getLogs({ ...(params||{}), page: 1, limit: 5000, sort: 'Date Time', order: 'ASC' });
+          const rows = Array.isArray(logRes?.data) ? logRes.data : [];
+          const normalize = (r) => {
+            const dtRaw = r['Date Time'] || r.dateTime;
+            let dt = null; try { dt = new Date(dtRaw); if (isNaN(dt)) dt = null; } catch {}
+            const dirRaw = (r.Direction || r.direction || '').toString().trim().toUpperCase();
+            const dir = dirRaw === 'INBOUND' || dirRaw === 'เข้า' ? 'IN' : dirRaw === 'OUTBOUND' || dirRaw === 'ออก' ? 'OUT' : dirRaw;
+            return { dt, dir };
+          };
+          const items = rows.map(normalize).filter(x => x.dt);
+          const hours = Array.from({ length: 24 }, (_, h) => ({
+            hour: `${String(h).padStart(2,'0')}:00`,
+            hourRange: `${String(h).padStart(2,'0')}:00 - ${String(h).padStart(2,'0')}:59`,
+            IN: 0, OUT: 0, todayTotal: 0, total: 0
+          }));
+          const daySet = new Set();
+          const byDayHour = new Map(); // key dayKey -> array[24] totals
+          const todayKey = new Date().toISOString().slice(0,10);
+          for (const it of items) {
+            const h = it.dt.getHours();
+            const dk = it.dt.toISOString().slice(0,10);
+            daySet.add(dk);
+            if (it.dir === 'IN') hours[h].IN++;
+            else if (it.dir === 'OUT') hours[h].OUT++;
+            hours[h].total++;
+            if (dk === todayKey) hours[h].todayTotal++;
+            const arr = byDayHour.get(dk) || Array(24).fill(0);
+            arr[h]++;
+            byDayHour.set(dk, arr);
+          }
+          // Average per hour across days
+          const dayCount = Array.from(daySet).length || 1;
+          const ts = hours.map((o, h) => {
+            let sum = 0; byDayHour.forEach(arr => { sum += arr[h] || 0; });
+            const avg = sum / dayCount;
+            return { ...o, avgTotal: Math.round(avg) };
+          });
+          setDirectionTS(ts);
+        } catch {
+          setDirectionTS([]);
+        }
       } catch (e) {
         if (!mounted) return;
         setHourly({ data: [], loading: false });
         setLocation({ data: [], loading: false });
         setDirection({ data: [], loading: false });
+        setDirectionTS([]);
       }
     };
     setHourly(s => ({ ...s, loading: true }));
@@ -81,8 +109,10 @@ const QuickInsights = ({ params }) => {
     try {
       setActiveTab('location');
       setLocationFocus(name);
+      setShowAllReasons(false);
       setLoadingDetail(true);
-      const query = { ...(params || {}), page: 1, limit: 500, location: [name] };
+      // ใช้ limit สูงเพื่อให้สรุปใกล้เคียงทั้งชุดข้อมูล และอ่านค่า total จาก pagination
+      const query = { ...(params || {}), page: 1, limit: 50000, location: [name] };
       const res = await apiService.getLogs(query);
       const rows = res?.data || [];
       const normalize = (r) => ({
@@ -93,7 +123,7 @@ const QuickInsights = ({ params }) => {
         reason: clean(r.Reason || r.reason)
       });
       const items = rows.map(normalize).filter(x => x.dt && !isNaN(x.dt));
-      const total = items.length;
+      const total = (res?.pagination?.total != null) ? parseInt(res.pagination.total, 10) : items.length;
       let denied = 0, offHours = 0, weekend = 0;
       const users = new Set();
       const reasons = new Map();
@@ -108,22 +138,23 @@ const QuickInsights = ({ params }) => {
         if (!isEmptyish(it.reason)) reasons.set(it.reason, (reasons.get(it.reason) || 0) + 1);
         if (!lastTime || it.dt > lastTime) lastTime = it.dt;
       }
-      const deniedRate = total > 0 ? Math.round((denied/total)*100) : 0;
+      const deniedPct = total > 0 ? (denied/total)*100 : 0;
+      const offPct = total > 0 ? (offHours/total)*100 : 0;
+      const weekendPct = total > 0 ? (weekend/total)*100 : 0;
       const breakdown = [];
-      if (denied>0) breakdown.push({ label:'ปฏิเสธ', value: denied, detail:'จำนวนครั้งที่ถูกปฏิเสธ', contrib: denied*2, weight:2 });
-      if (offHours>0) breakdown.push({ label:'นอกเวลา', value: offHours, detail:'ช่วง 22:00–06:00', contrib: offHours, weight:1 });
-      if (weekend>0) breakdown.push({ label:'วันหยุด', value: weekend, detail:'เสาร์/อาทิตย์', contrib: weekend, weight:1 });
-      if (users.size>10) breakdown.push({ label:'ผู้ใช้หลากหลาย', value: users.size, detail:'ผู้ใช้ไม่ซ้ำ > 10', contrib: Math.round((users.size-10)*0.5*10)/10, weight:0.5 });
-      if (deniedRate>0) breakdown.push({ label:'อัตราถูกปฏิเสธ', value: deniedRate, detail:'เปอร์เซ็นต์เหตุการณ์', contrib: Math.min(10, Math.round((denied/Math.max(1,total))*20)), weight:'~' });
-      const score = Math.min(100, Math.round(breakdown.reduce((s, b) => s + b.contrib, 0)));
-      // top reasons
-      const topReasons = Array.from(reasons.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5);
+      // คิดเป็นสัดส่วนของทั้งหมด (ร้อยละ) แล้วนำมาบวกกันโดยตรง
+      if (total > 0 && denied > 0) breakdown.push({ label:'ปฏิเสธ', value: Math.round(deniedPct), detail:`ปฏิเสธ ${denied}/${total} (${deniedPct.toFixed(1)}%)`, contrib: Math.round(deniedPct), unit:'%' });
+      if (total > 0 && offHours > 0) breakdown.push({ label:'นอกเวลา', value: Math.round(offPct), detail:`ช่วง 22:00–06:00 ${offHours}/${total} (${offPct.toFixed(1)}%)`, contrib: Math.round(offPct), unit:'%' });
+      if (total > 0 && weekend > 0) breakdown.push({ label:'วันหยุด', value: Math.round(weekendPct), detail:`เสาร์/อาทิตย์ ${weekend}/${total} (${weekendPct.toFixed(1)}%)`, contrib: Math.round(weekendPct), unit:'%' });
+      const score = Math.min(100, Math.round(breakdown.reduce((s, b) => s + (b.contrib || 0), 0)));
+      // reasons list (sorted desc)
+      const reasonsSorted = Array.from(reasons.entries()).sort((a,b)=>b[1]-a[1]);
       setLocDetail({
         name,
         score,
         breakdown,
         counts: { total, denied, offHours, weekend, uniqueUsers: users.size },
-        topReasons,
+        reasonsSorted,
         lastTime,
       });
     } catch (e) {
@@ -140,9 +171,8 @@ const QuickInsights = ({ params }) => {
           <h2 className="text-lg font-semibold text-gray-900">กราฟรวม</h2>
           <div className="flex items-center gap-2">
             {[
-              { key: 'hourly', label: 'รายชั่วโมง' },
               { key: 'location', label: 'ตามสถานที่' },
-              { key: 'direction', label: 'ทิศทาง' },
+              { key: 'hourly', label: 'รายชั่วโมง' },
             ].map(t => (
               <button
                 key={t.key}
@@ -161,9 +191,6 @@ const QuickInsights = ({ params }) => {
             )}
             {activeTab === 'location' && (
               <LocationDistributionChart data={location.data} loading={location.loading} initialLocation={locationFocus} />
-            )}
-            {activeTab === 'direction' && (
-              <DirectionChart data={direction.data} loading={direction.loading} />
             )}
           </div>
           <div className="border-l p-4">
@@ -219,10 +246,10 @@ const QuickInsights = ({ params }) => {
                     {(locDetail.breakdown || []).map((b, i) => (
                       <li key={i} className="px-3 py-2 text-sm flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-gray-900">{b.label} × {b.value}</div>
-                          <div className="text-gray-500 text-xs">{b.detail} • น้ำหนัก {b.weight}</div>
+                          <div className="font-medium text-gray-900">{b.label} • {b.value}%</div>
+                          <div className="text-gray-500 text-xs">{b.detail}</div>
                         </div>
-                        <div className="text-blue-600 font-semibold">+{b.contrib}</div>
+                        <div className="text-blue-600 font-semibold">+{b.contrib}%</div>
                       </li>
                     ))}
                     {(!locDetail.breakdown || locDetail.breakdown.length === 0) && (
@@ -230,16 +257,21 @@ const QuickInsights = ({ params }) => {
                     )}
                   </ul>
                   <div className="text-xs text-gray-600">
-                    สรุป: รวม {locDetail.counts?.total || 0} ครั้ง • ปฏิเสธ {locDetail.counts?.denied || 0} • นอกเวลา {locDetail.counts?.offHours || 0} • วันหยุด {locDetail.counts?.weekend || 0} • ผู้ใช้ {locDetail.counts?.uniqueUsers || 0}
+                    สรุป: รวม {(locDetail.counts?.total||0).toLocaleString('th-TH')} ครั้ง • ปฏิเสธ {(locDetail.counts?.denied||0).toLocaleString('th-TH')} • นอกเวลา {(locDetail.counts?.offHours||0).toLocaleString('th-TH')} • วันหยุด {(locDetail.counts?.weekend||0).toLocaleString('th-TH')} • ผู้ใช้ {(locDetail.counts?.uniqueUsers||0).toLocaleString('th-TH')}
                   </div>
-                  {locDetail.topReasons && locDetail.topReasons.length > 0 && (
+                  {Array.isArray(locDetail.reasonsSorted) && locDetail.reasonsSorted.length > 0 && (
                     <div className="text-sm text-gray-700">
-                      สาเหตุยอดฮิต:
-                      <ul className="list-disc pl-5 mt-1 text-xs text-gray-600">
-                        {locDetail.topReasons.map(([reason, cnt], idx) => (
-                          <li key={idx}>{reason} — {cnt.toLocaleString('th-TH')} ครั้ง</li>
+                      สาเหตุ{showAllReasons ? 'ทั้งหมด' : 'ยอดฮิต'} ({locDetail.reasonsSorted.length.toLocaleString('th-TH')} รายการ):
+                      <ul className="list-disc pl-5 mt-1 text-xs text-gray-600 max-h-52 overflow-auto">
+                        {(showAllReasons ? locDetail.reasonsSorted : locDetail.reasonsSorted.slice(0,10)).map(([reason, cnt], idx) => (
+                          <li key={idx}>{reason || '(ไม่ระบุ)'} — {cnt.toLocaleString('th-TH')} ครั้ง</li>
                         ))}
                       </ul>
+                      {locDetail.reasonsSorted.length > 10 && (
+                        <button onClick={()=>setShowAllReasons(s=>!s)} className="mt-2 text-xs text-blue-600 hover:underline">
+                          {showAllReasons ? 'แสดงเฉพาะ Top 10' : 'แสดงทั้งหมด'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </>

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import aiService from '../../services/aiService'; // Adjust path as needed
+import aiService from '../../services/aiService';
+// AI customization removed by request
 
 const CasesPage = () => {
   const [caseList, setCaseList] = useState([]);
@@ -20,18 +21,7 @@ const CasesPage = () => {
   const [exportSelectedKeys, setExportSelectedKeys] = useState([]); // empty = all
   const [exportCompress, setExportCompress] = useState(false); // gzip if supported
 
-  // AI Analysis options - NEW!
-  const [aiAnalysisOpen, setAiAnalysisOpen] = useState(false);
-  const [aiStyle, setAiStyle] = useState('analytical'); // analytical, executive, technical, narrative
-  const [aiLayout, setAiLayout] = useState('executive'); // executive, detailed, summary, custom
-  const [aiLanguage, setAiLanguage] = useState('thai'); // thai, english, mixed
-  const [aiTone, setAiTone] = useState('professional'); // professional, casual, formal, conversational
-  const [aiDepth, setAiDepth] = useState('medium'); // shallow, medium, deep
-  const [aiIncludeCharts, setAiIncludeCharts] = useState(true);
-  const [aiIncludeRecommendations, setAiIncludeRecommendations] = useState(true);
-  const [aiIncludeRiskAssessment, setAiIncludeRiskAssessment] = useState(true);
-  const [aiCustomPrompt, setAiCustomPrompt] = useState('');
-  const [aiGenerating, setAiGenerating] = useState(false);
+  // Removed AI customization states
 
   useEffect(() => {
     (async () => {
@@ -121,121 +111,153 @@ const CasesPage = () => {
     return s;
   };
 
-  // NEW: Generate comprehensive data analysis with AI customization
-  const generateDataAnalysis = (rows) => {
-    let allowedCount = 0;
-    let deniedCount = 0;
-    const reasonCounts = {};
-    const locationCounts = {};
-    const deviceCounts = {};
-    const userTypeCounts = {};
-    const hourlyStats = Array(24).fill(0);
-    const dailyStats = {};
+  // Analyze rows to produce a non-AI summary and recommendations
+  const analyzeRows = (rows) => {
+    const summary = {
+      total: 0,
+      allowed: 0,
+      denied: 0,
+      deniedRate: 0,
+      reasons: {},
+      locations: {},
+      doors: {},
+      users: {},
+      hourly: Array(24).fill(0),
+      daily: {},
+    };
 
-    (rows || []).forEach(r => {
-      const allowStatus = normalizeVal('Allow', r['Allow'] || r['allow']);
-      if (allowStatus === 'สำเร็จ') {
-        allowedCount++;
-      } else if (allowStatus === 'ปฏิเสธ') {
-        deniedCount++;
-      }
+    const emptyish = (v) => {
+      if (v === null || v === undefined) return true;
+      const s = String(v).trim().toLowerCase();
+      return s === '' || s === '-' || s === '—' || s === 'n/a' || s === 'na' || s === 'none' || s === 'ไม่ระบุ' || s === 'unspecified' || s === 'not specified';
+    };
 
-      // Count reasons
-      const reason = r['Reason'] || r['reason'];
-      if (reason) reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
-
-      // Count locations
-      const location = r['Location'] || r['location'];
-      if (location) locationCounts[location] = (locationCounts[location] || 0) + 1;
-
-      // Count devices
-      const device = r['Device'] || r['device'];
-      if (device) deviceCounts[device] = (deviceCounts[device] || 0) + 1;
-
-      // Count user types
-      const userType = r['User Type'] || r['userType'];
-      if (userType) userTypeCounts[userType] = (userTypeCounts[userType] || 0) + 1;
-
-      // Time analysis
-      const dateTime = r['Date Time'] || r['dateTime'];
-      if (dateTime) {
-        const date = new Date(dateTime);
-        if (!isNaN(date.getTime())) {
-          const hour = date.getHours();
-          hourlyStats[hour]++;
-          const dayKey = date.toISOString().split('T')[0];
-          dailyStats[dayKey] = (dailyStats[dayKey] || 0) + 1;
+    const isAllowish = (v) => {
+      if (typeof v === 'boolean') return v === true;
+      if (typeof v === 'number') return v === 1;
+      const s = String(v || '').trim().toLowerCase();
+      return ['true','t','1','yes','y','success','allow','allowed','pass','granted','อนุญาต'].includes(s);
+    };
+    const isDeniedish = (v) => {
+      if (typeof v === 'boolean') return v === false;
+      if (typeof v === 'number') return v === 0;
+      const s = String(v || '').trim().toLowerCase();
+      return ['false','f','0','no','n','deny','denied','fail','failed','blocked','ปฏิเสธ'].includes(s);
+    };
+    const getAllowFromRow = (r) => {
+      const candidates = ['Allow','allow','Allow Status','allowStatus','Access Result','accessResult','Result','result','Status','status'];
+      for (const k of candidates) {
+        if (k in (r || {})) {
+          const v = r[k];
+          if (isAllowish(v)) return 1;
+          if (isDeniedish(v)) return -1;
         }
       }
+      return 0;
+    };
+    const extractHour = (s) => {
+      if (!s) return null;
+      const str = String(s);
+      const m = str.match(/\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+      if (m) {
+        const h = parseInt(m[1], 10);
+        if (!isNaN(h) && h >= 0 && h <= 23) return h;
+      }
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return d.getHours();
+      return null;
+    };
+    const extractDayKey = (s) => {
+      if (!s) return null;
+      const str = String(s);
+      const iso = str.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+      if (iso) return iso[1];
+      const part = str.split(/\s+/)[0];
+      return part || null;
+    };
+
+    (rows || []).forEach(r => {
+      summary.total += 1;
+      const allowFlag = getAllowFromRow(r);
+      if (allowFlag === 1) summary.allowed += 1;
+      else if (allowFlag === -1) summary.denied += 1;
+
+      const inc = (obj, key) => { if (emptyish(key)) return; obj[key] = (obj[key] || 0) + 1; };
+      inc(summary.reasons, r['Reason'] || r['reason']);
+      inc(summary.locations, r['Location'] || r['location']);
+      inc(summary.doors, r['Door'] || r['door']);
+      inc(summary.users, r['Card Name'] || r['cardName']);
+
+      const dt = r['Date Time'] || r['dateTime'];
+      const hour = extractHour(dt);
+      if (hour != null) summary.hourly[hour] += 1;
+      const dayKey = extractDayKey(dt);
+      if (dayKey) summary.daily[dayKey] = (summary.daily[dayKey] || 0) + 1;
     });
 
-    const totalRecords = rows.length;
-    const successRate = totalRecords > 0 ? ((allowedCount / totalRecords) * 100) : 0;
-    const deniedRate = totalRecords > 0 ? ((deniedCount / totalRecords) * 100) : 0;
+    summary.deniedRate = summary.total > 0 ? (summary.denied / summary.total) * 100 : 0;
 
-    // Find peak hours
-    const peakHour = hourlyStats.indexOf(Math.max(...hourlyStats));
-    const peakCount = Math.max(...hourlyStats);
+    const topOf = (obj, n = 3) => Object.entries(obj)
+      .filter(([k]) => !!k)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n);
 
-    // Find most active day
-    const mostActiveDay = Object.entries(dailyStats).reduce((a, b) => (b[1] > a[1] ? b : a), ['', 0]);
+    const maxCount = Math.max(...summary.hourly);
+    const peakHour = summary.hourly.indexOf(maxCount);
+    const peakHourRange = maxCount > 0 && peakHour >= 0
+      ? `${String(peakHour).padStart(2, '0')}:00 - ${String((peakHour + 1) % 24).padStart(2, '0')}:00`
+      : '-';
+    const mostActiveDay = Object.entries(summary.daily).reduce((a, b) => (b[1] > a[1] ? b : a), ['', 0]);
 
     return {
-      totalAccess: totalRecords,
-      successfulAccess: allowedCount,
-      deniedAccess: deniedCount,
-      successRate: successRate.toFixed(2),
-      deniedRate: deniedRate.toFixed(2),
-      overview: { totalAccess: totalRecords, successfulAccess: allowedCount, deniedAccess: deniedCount, successRate, deniedRate },
-      summary: {
-        mostCommonReason: Object.entries(reasonCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'ไม่ระบุ',
-        mostCommonLocation: Object.entries(locationCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'ไม่ระบุ',
-        mostActiveDevice: Object.entries(deviceCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'ไม่ระบุ',
-        primaryUserType: Object.entries(userTypeCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || 'ไม่ระบุ',
-        peakHour: `${peakHour.toString().padStart(2, '0')}:00 (${peakCount} ครั้ง)`,
-        mostActiveDay: mostActiveDay[0] ? `${new Date(mostActiveDay[0]).toLocaleDateString('th-TH')} (${mostActiveDay[1]} ครั้ง)` : 'ไม่ระบุ'
-      },
-      breakdowns: { reasons: reasonCounts, locations: locationCounts, devices: deviceCounts, userTypes: userTypeCounts, hourlyStats, dailyStats }
+      ...summary,
+      topReasons: topOf(summary.reasons),
+      topLocations: topOf(summary.locations),
+      topDoors: topOf(summary.doors),
+      frequentUsers: topOf(summary.users),
+      peakHourRange,
+      mostActiveDay,
     };
   };
 
-  // NEW: Generate AI analysis with custom options
-  const generateAIAnalysis = async () => {
-    if (!result.rows || result.rows.length === 0) return null;
+  // Produce rule-based recommendations from summary
+  const buildRecommendations = (s) => {
+    const recs = [];
+    const round1 = (x) => Math.round(x * 10) / 10;
 
-    setAiGenerating(true);
-    try {
-      const analysis = generateDataAnalysis(result.rows);
-      const caseTitle = caseList.find(c => c.id === result.id)?.title || 'รายงานเคสความปลอดภัย';
-
-      // Build AI request based on user preferences
-      const aiRequest = {
-        stats: analysis,
-        style: aiStyle,
-        layout: aiLayout,
-        options: {
-          language: aiLanguage,
-          tone: aiTone,
-          depth: aiDepth,
-          includeCharts: aiIncludeCharts,
-          includeRecommendations: aiIncludeRecommendations,
-          includeRiskAssessment: aiIncludeRiskAssessment,
-          caseTitle: caseTitle,
-          customPrompt: aiCustomPrompt.trim() || undefined
-        }
-      };
-
-      const aiReport = await aiService.generateReport(aiRequest);
-      return aiReport.markdown;
-    } catch (error) {
-      console.error('AI Analysis failed:', error);
-      return `# ข้อผิดพลาดในการวิเคราะห์ AI\n\nไม่สามารถสร้างการวิเคราะห์ได้ในขณะนี้\n\nรายละเอียดข้อผิดพลาด: ${error.message}`;
-    } finally {
-      setAiGenerating(false);
+    if (s.deniedRate >= 20) {
+      recs.push(`อัตราปฏิเสธสูง (${round1(s.deniedRate)}%) — ตรวจสอบสิทธิ์เข้า–ออกและนโยบายการเข้าถึงของผู้ใช้กลุ่มเสี่ยง`);
+    } else if (s.deniedRate >= 10) {
+      recs.push(`อัตราปฏิเสธปานกลาง (${round1(s.deniedRate)}%) — ทบทวนกฎการเข้าถึงที่ใช้บ่อยและอัปเดตสิทธิ์ของผู้ใช้`);
     }
+
+    if (s.topReasons[0]) {
+      const [reason, cnt] = s.topReasons[0];
+      recs.push(`เหตุผลที่พบมาก: “${reason}” (${cnt} ครั้ง) — วิเคราะห์ที่ต้นทาง (อุปกรณ์/ระบบ) เพื่อปรับลดความผิดพลาด`);
+    }
+
+    if (s.topLocations[0]) {
+      const [loc] = s.topLocations[0];
+      recs.push(`จุดที่ใช้งานมาก: ${loc} — เพิ่มการเฝ้าระวังและจัดสรรทรัพยากรช่วงพีก`);
+    }
+
+    // Business hours heuristic 08:00–18:00 (only if we have a real peak hour)
+    if (s.peakHourRange && s.peakHourRange !== '-') {
+      const peakHour = parseInt(s.peakHourRange.slice(0, 2) || '0', 10);
+      if (!isNaN(peakHour) && (peakHour < 8 || peakHour >= 18)) {
+        recs.push(`ปริมาณการใช้งานสูงนอกเวลาทำการ (${s.peakHourRange}) — ตรวจสอบตารางกะ/สิทธิ์พิเศษ และเพิ่มการแจ้งเตือน`);
+      }
+    }
+
+    if (s.frequentUsers[0] && s.frequentUsers[0][1] >= Math.max(5, Math.ceil(s.total * 0.05))) {
+      recs.push(`มีผู้ใช้บางรายมีการใช้งานสูงผิดปกติ — ตรวจสอบความถูกต้องของการใช้งานและให้คำแนะนำเพิ่มเติม`);
+    }
+
+    if (recs.length === 0) recs.push('พฤติกรรมรวมอยู่ในเกณฑ์ปกติ — เฝ้าระวังต่อเนื่องและทบทวนสิทธิ์เป็นระยะ');
+    return recs;
   };
 
-  // Enhanced CSV export with AI analysis
+  // CSV export with report-like summary (no AI)
   const exportCaseCSV = async () => {
     if (!result.rows || result.rows.length === 0) return;
 
@@ -279,21 +301,82 @@ const CasesPage = () => {
       'Transaction ID': 'รหัสธุรกรรม', 'id': 'รหัสธุรกรรม'
     })[key] || key;
 
-    // Generate AI analysis with custom settings
-    const aiReportMarkdown = await generateAIAnalysis();
+    // Build report-like preface (AI-first with fallback)
+    const summary = analyzeRows(result.rows || []);
+    const recs = buildRecommendations(summary);
+    const fmtTop = (arr) => (arr && arr.length > 0)
+      ? arr.map(([k, c]) => `- ${k}: ${c} ครั้ง`)
+      : ['- ไม่มีข้อมูล'];
 
-    // Create CSV with AI analysis
-    const reportContentForCSV = [
-      ['--- รายงานการวิเคราะห์ความปลอดภัยโดย AI ---'],
-      [aiReportMarkdown || 'ไม่สามารถสร้างการวิเคราะห์ AI ได้'],
-      ['--- สิ้นสุดรายงาน AI ---'],
-      [], // Blank line
-    ].map(r => r.map(esc).join(',')).join('\r\n');
+    const wantAISummary = (import.meta.env.VITE_ENABLE_AI_EXPORT_SUMMARY || 'true') !== 'false';
+
+    const buildFallbackLines = () => [
+      `รายงานสรุปเคส: ${metaTitle}`,
+      `วันที่ออกรายงาน: ${new Date().toLocaleString('th-TH')}`,
+      '',
+      'สรุปภาพรวม:',
+      `- รายการทั้งหมด: ${summary.total.toLocaleString('th-TH')} ครั้ง`,
+      `- อนุญาต: ${summary.allowed.toLocaleString('th-TH')} ครั้ง`,
+      `- ปฏิเสธ: ${summary.denied.toLocaleString('th-TH')} ครั้ง (${(Math.round(summary.deniedRate*10)/10)}%)`,
+      `- ชั่วโมงพีก: ${summary.peakHourRange}`,
+      summary.mostActiveDay[0] ? `- วันที่ใช้งานมากสุด: ${new Date(summary.mostActiveDay[0]).toLocaleDateString('th-TH')} (${summary.mostActiveDay[1]} ครั้ง)` : undefined,
+      '',
+      'เหตุผลที่พบบ่อย:',
+      ...fmtTop(summary.topReasons),
+      '',
+      'สถานที่ที่พบบ่อย:',
+      ...fmtTop(summary.topLocations),
+      '',
+      'ข้อเสนอแนะถัดไป:',
+      ...recs.map(r => `- ${r}`),
+      '',
+    ].filter(Boolean);
+
+    let reportLines = buildFallbackLines();
+
+    if (wantAISummary) {
+      try {
+        // Build a concise Thai prompt for AI to produce the 4 sections in bullet format
+        const aiList = (arr) => (arr || []).map(([k, c]) => `${k} (${c} ครั้ง)`).join(', ');
+        const userMessage = [
+          'โปรดสรุปข้อมูล access log ต่อไปนี้แบบกระชับ เป็นภาษาไทย และจัดหัวข้อดังนี้:',
+          'สรุปภาพรวม:, เหตุผลที่พบบ่อย:, สถานที่ที่พบบ่อย:, ข้อเสนอแนะถัดไป:.',
+          `ข้อมูล: รวม ${summary.total} ครั้ง, อนุญาต ${summary.allowed}, ปฏิเสธ ${summary.denied} (${Math.round(summary.deniedRate*10)/10}%), ชั่วโมงพีก: ${summary.peakHourRange}${summary.mostActiveDay[0] ? `, วันใช้งานมากสุด: ${summary.mostActiveDay[0]} (${summary.mostActiveDay[1]} ครั้ง)` : ''}.`,
+          `เหตุผล Top: ${aiList(summary.topReasons) || 'ไม่มีข้อมูล'}.`,
+          `สถานที่ Top: ${aiList(summary.topLocations) || 'ไม่มีข้อมูล'}.`,
+          'ระบุข้อเสนอแนะให้ actionable และเหมาะกับบริบทความปลอดภัย. หลีกเลี่ยงคำทักทายและปิดท้าย, ตอบเป็น bullet สั้นๆ.'
+        ].join(' ');
+
+        const aiText = await aiService.generateResponse(userMessage, { stats: { totalAccess: summary.total, successfulAccess: summary.allowed, deniedAccess: summary.denied } });
+
+        // Normalize AI text into lines. If the AI text doesn’t include headings, prepend them.
+        const lines = String(aiText || '').split(/\r?\n/).map(s => s.trim());
+        const hasHeading = (h) => lines.some(l => l.replace(/^[-•]\s*/, '') === h || l.startsWith(h));
+        const ensureHeadingBlock = (h) => (hasHeading(h) ? [] : [h]);
+
+        const aiLines = [
+          `รายงานสรุปเคส: ${metaTitle}`,
+          `วันที่ออกรายงาน: ${new Date().toLocaleString('th-TH')}`,
+          '',
+          ...ensureHeadingBlock('สรุปภาพรวม:'),
+          ...lines,
+        ];
+
+        // Use AI output if it has some substance; else fallback
+        if (aiLines.filter(l => l && !/^รายงานสรุปเคส:|^วันที่ออกรายงาน:/.test(l)).length > 0) {
+          reportLines = aiLines;
+        }
+      } catch (e) {
+        // AI unavailable or failed → keep fallback
+        console.warn('AI summary generation failed, using fallback:', e?.message);
+      }
+    }
 
     const headerLine = selectedKeys.map(k => esc(displayName(k))).join(',');
     const body = (result.rows || []).map(r => selectedKeys.map(h => esc(normalizeVal(h, r[h]))).join(',')).join('\r\n');
 
-    const csv = `\uFEFF${reportContentForCSV}\r\n${headerLine}\r\n${body}`;
+    const reportBlock = reportLines.map(esc).join('\r\n');
+    const csv = `\uFEFF${reportBlock}\r\n${headerLine}\r\n${body}`;
 
     const download = async () => {
       const base = metaTitle.replace(/[^\u0E00-\u0E7Fa-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '_');
@@ -332,15 +415,7 @@ const CasesPage = () => {
               {displayMode === 'modal' ? 'Modal' : 'Inline'}
             </button>
           </div>
-          {/* NEW: AI Configuration Button */}
-          <button
-            disabled={!result.rows || result.rows.length === 0}
-            onClick={() => setAiAnalysisOpen(true)}
-            className={`px-3 py-1.5 rounded-md border text-xs ${result.rows?.length ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700' : 'bg-gray-100 text-gray-400 border-gray-200'}`}
-            title="ปรับแต่งการวิเคราะห์ AI"
-          >
-            🤖 ปรับแต่ง AI
-          </button>
+          {/* AI customization removed */}
           <button
             disabled={!result.rows || result.rows.length === 0}
             onClick={() => setExportPickerOpen(true)}
@@ -349,11 +424,11 @@ const CasesPage = () => {
             เลือกคอลัมน์
           </button>
           <button
-            disabled={!result.rows || result.rows.length === 0 || aiGenerating}
+            disabled={!result.rows || result.rows.length === 0}
             onClick={exportCaseCSV}
-            className={`px-3 py-1.5 rounded-md border text-xs ${result.rows?.length && !aiGenerating ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-gray-100 text-gray-400 border-gray-200'}`}
+            className={`px-3 py-1.5 rounded-md border text-xs ${result.rows?.length ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-gray-100 text-gray-400 border-gray-200'}`}
           >
-            {aiGenerating ? '⏳ กำลังวิเคราะห์...' : 'ส่งออกรายงาน (CSV)'}
+            ส่งออกรายงาน (CSV)
           </button>
         </div>
       </div>
@@ -528,280 +603,7 @@ const CasesPage = () => {
         </div>
       </div>
 
-      {/* NEW: AI Analysis Configuration Modal */}
-      {aiAnalysisOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setAiAnalysisOpen(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white z-10">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🤖</span>
-                <h3 className="text-lg font-semibold text-gray-900">ปรับแต่งการวิเคราะห์ AI</h3>
-              </div>
-              <button onClick={() => setAiAnalysisOpen(false)} className="text-xs px-3 py-1 rounded border bg-white hover:bg-gray-50">ปิด</button>
-            </div>
-
-            <div className="p-6 overflow-auto" style={{ maxHeight: '75vh' }}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                {/* Style & Format */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-gray-800 border-b pb-2">รูปแบบรายงาน</h4>
-
-                  <div>
-                    <label className="block text-sm text-gray-700 mb-2">สไตล์การวิเคราะห์</label>
-                    <select
-                      value={aiStyle}
-                      onChange={e => setAiStyle(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                    >
-                      <option value="analytical">วิเคราะห์เชิงลึก (Analytical)</option>
-                      <option value="executive">สำหรับผู้บริหาร (Executive)</option>
-                      <option value="technical">เทคนิค (Technical)</option>
-                      <option value="narrative">เล่าเรื่อง (Narrative)</option>
-                      <option value="summary">สรุปย่อ (Summary)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-700 mb-2">โครงสร้างรายงาน</label>
-                    <select
-                      value={aiLayout}
-                      onChange={e => setAiLayout(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                    >
-                      <option value="executive">บทสรุปสำหรับผู้บริหาร</option>
-                      <option value="detailed">รายละเอียดครบถ้วน</option>
-                      <option value="summary">สรุปสั้น</option>
-                      <option value="dashboard">แดชบอร์ด</option>
-                      <option value="custom">กำหนดเอง</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-700 mb-2">ภาษา</label>
-                    <select
-                      value={aiLanguage}
-                      onChange={e => setAiLanguage(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                    >
-                      <option value="thai">ไทย</option>
-                      <option value="english">English</option>
-                      <option value="mixed">ไทย-English (ผสม)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-700 mb-2">โทนการเขียน</label>
-                    <select
-                      value={aiTone}
-                      onChange={e => setAiTone(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                    >
-                      <option value="professional">มืออาชีพ</option>
-                      <option value="formal">เป็นทางการ</option>
-                      <option value="casual">สบายๆ</option>
-                      <option value="conversational">สนทนา</option>
-                      <option value="urgent">เร่งด่วน</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-700 mb-2">ความลึกของการวิเคราะห์</label>
-                    <select
-                      value={aiDepth}
-                      onChange={e => setAiDepth(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm"
-                    >
-                      <option value="shallow">ภาพรวม (Shallow)</option>
-                      <option value="medium">ปานกลาง (Medium)</option>
-                      <option value="deep">เชิงลึก (Deep)</option>
-                      <option value="comprehensive">ครอบคลุมทั้งหมด</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Content Options */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-gray-800 border-b pb-2">เนื้อหาที่ต้องการ</h4>
-
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4"
-                        checked={aiIncludeCharts}
-                        onChange={e => setAiIncludeCharts(e.target.checked)}
-                      />
-                      <span>รวมกราฟและแผนภูมิ</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4"
-                        checked={aiIncludeRecommendations}
-                        onChange={e => setAiIncludeRecommendations(e.target.checked)}
-                      />
-                      <span>ข้อเสนอแนะและการปรับปรุง</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4"
-                        checked={aiIncludeRiskAssessment}
-                        onChange={e => setAiIncludeRiskAssessment(e.target.checked)}
-                      />
-                      <span>การประเมินความเสี่ยง</span>
-                    </label>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-700 mb-2">คำสั่งพิเศษ (Custom Prompt)</label>
-                    <textarea
-                      value={aiCustomPrompt}
-                      onChange={e => setAiCustomPrompt(e.target.value)}
-                      className="w-full border rounded px-3 py-2 text-sm h-32 resize-none"
-                      placeholder="ระบุคำสั่งพิเศษหรือข้อกำหนดเพิ่มเติมที่ต้องการให้ AI วิเคราะห์..."
-                    />
-                    <div className="text-xs text-gray-500 mt-1">
-                      ตัวอย่าง: "เปรียบเทียบกับเดือนที่แล้ว", "มุ่งเน้นการความปลอดภัย", "แสดงแนวโน้มรายชั่วโมง"
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Preview Section */}
-              <div className="mt-6 pt-6 border-t">
-                <h4 className="text-sm font-semibold text-gray-800 mb-3">ตัวอย่างการตั้งค่า</h4>
-                <div className="bg-gray-50 rounded-lg p-4 text-sm">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                    <div>
-                      <span className="font-medium text-gray-600">สไตล์:</span>
-                      <div className="text-gray-800 mt-1">{
-                        {
-                          analytical: 'วิเคราะห์เชิงลึก',
-                          executive: 'สำหรับผู้บริหาร',
-                          technical: 'เทคนิค',
-                          narrative: 'เล่าเรื่อง',
-                          summary: 'สรุปย่อ'
-                        }[aiStyle]
-                      }</div>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600">โครงสร้าง:</span>
-                      <div className="text-gray-800 mt-1">{
-                        {
-                          executive: 'บทสรุปผู้บริหาร',
-                          detailed: 'รายละเอียดครบถ้วน',
-                          summary: 'สรุปสั้น',
-                          dashboard: 'แดชบอร์ด',
-                          custom: 'กำหนดเอง'
-                        }[aiLayout]
-                      }</div>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600">ภาษา:</span>
-                      <div className="text-gray-800 mt-1">{
-                        {
-                          thai: 'ไทย',
-                          english: 'English',
-                          mixed: 'ไทย-English'
-                        }[aiLanguage]
-                      }</div>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600">ความลึก:</span>
-                      <div className="text-gray-800 mt-1">{
-                        {
-                          shallow: 'ภาพรวม',
-                          medium: 'ปานกลาง',
-                          deep: 'เชิงลึก',
-                          comprehensive: 'ครอบคลุม'
-                        }[aiDepth]
-                      }</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex flex-wrap gap-2">
-                      {aiIncludeCharts && <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">📊 กราฟแผนภูมิ</span>}
-                      {aiIncludeRecommendations && <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">💡 ข้อเสนอแนะ</span>}
-                      {aiIncludeRiskAssessment && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">⚠️ ประเมินความเสี่ยง</span>}
-                      {aiCustomPrompt && <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">✨ คำสั่งพิเศษ</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="mt-6 flex items-center justify-between pt-4 border-t">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setAiStyle('analytical');
-                      setAiLayout('executive');
-                      setAiLanguage('thai');
-                      setAiTone('professional');
-                      setAiDepth('medium');
-                      setAiIncludeCharts(true);
-                      setAiIncludeRecommendations(true);
-                      setAiIncludeRiskAssessment(true);
-                      setAiCustomPrompt('');
-                    }}
-                    className="text-xs px-3 py-1 rounded border bg-gray-100 hover:bg-gray-200 text-gray-700"
-                  >
-                    รีเซ็ตเป็นค่าเริ่มต้น
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAiStyle('executive');
-                      setAiLayout('summary');
-                      setAiTone('formal');
-                      setAiDepth('shallow');
-                      setAiIncludeCharts(false);
-                      setAiIncludeRecommendations(true);
-                      setAiIncludeRiskAssessment(true);
-                    }}
-                    className="text-xs px-3 py-1 rounded border bg-blue-100 hover:bg-blue-200 text-blue-700"
-                  >
-                    รายงานด่วน
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAiStyle('analytical');
-                      setAiLayout('detailed');
-                      setAiTone('professional');
-                      setAiDepth('deep');
-                      setAiIncludeCharts(true);
-                      setAiIncludeRecommendations(true);
-                      setAiIncludeRiskAssessment(true);
-                    }}
-                    className="text-xs px-3 py-1 rounded border bg-green-100 hover:bg-green-200 text-green-700"
-                  >
-                    รายงานเต็มรูปแบบ
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setAiAnalysisOpen(false)}
-                    className="px-4 py-2 text-sm rounded border bg-white hover:bg-gray-50 text-gray-700"
-                  >
-                    ยกเลิก
-                  </button>
-                  <button
-                    onClick={() => setAiAnalysisOpen(false)}
-                    className="px-4 py-2 text-sm rounded border bg-purple-600 hover:bg-purple-700 text-white"
-                  >
-                    บันทึกการตั้งค่า
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AI customization removed by request */}
 
       {/* Export Column Picker */}
       {exportPickerOpen && (
