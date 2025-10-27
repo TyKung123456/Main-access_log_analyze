@@ -374,7 +374,8 @@ class ApiService {
    */
   async appendLogData(data) {
     const BATCH_INSERT_TIMEOUT = 120000; // 2 นาที
-    return this.request('/api/logs/batch-append', 'POST', { logs: data }, null, BATCH_INSERT_TIMEOUT);
+    // Backend batch endpoint lives under /api/upload
+    return this.request('/api/upload/batch-append', 'POST', { logs: data }, null, BATCH_INSERT_TIMEOUT);
   }
 
   /**

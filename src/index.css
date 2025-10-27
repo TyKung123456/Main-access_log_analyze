@@ -275,6 +275,24 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
+  /* Jump highlight for in-page navigation */
+  .jump-flash {
+    position: relative;
+    animation: jumpFlash 1.2s ease-out 1;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.18), 0 0 0 6px rgba(0,0,0,0.06);
+    border-radius: 0.75rem; /* match rounded-xl */
+    transform-origin: center;
+  }
+
+  /* Stronger pop effect for spotlighting sections */
+  .jump-pop {
+    position: relative;
+    animation: jumpPop 1.2s cubic-bezier(0.22, 1, 0.36, 1) 1;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
+    border-radius: 0.75rem;
+    z-index: 10;
+  }
+
   /* Gradient text */
   .gradient-text {
     background: linear-gradient(45deg, var(--primary-500), #8b5cf6);
@@ -299,6 +317,13 @@ body {
   .safe-right {
     padding-right: env(safe-area-inset-right);
   }
+
+  /* Number bounce for KPI value */
+  .kpi-bounce {
+    display: inline-block;
+    animation: kpiBounce 0.9s cubic-bezier(0.22, 1, 0.36, 1) 1;
+    transform-origin: center;
+  }
 }
 
 /* Keyframes */
@@ -322,6 +347,27 @@ body {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+@keyframes jumpFlash {
+  0%   { background-color: rgba(0,0,0,0.04); transform: scale(1.01); filter: brightness(1.03); }
+  30%  { background-color: rgba(0,0,0,0.03); transform: scale(1.015); filter: brightness(1.02); }
+  70%  { background-color: rgba(0,0,0,0.015); transform: scale(1.008); filter: brightness(1.01); }
+  100% { background-color: transparent; transform: scale(1.0); filter: none; }
+}
+
+@keyframes jumpPop {
+  0%   { background-color: rgba(0,0,0,0.04); transform: scale(1.02); filter: brightness(1.03); }
+  25%  { background-color: rgba(0,0,0,0.03); transform: scale(1.035); filter: brightness(1.02); }
+  60%  { background-color: rgba(0,0,0,0.02); transform: scale(1.02);  filter: brightness(1.01); }
+  100% { background-color: transparent;               transform: scale(1.0);  filter: none; }
+}
+
+@keyframes kpiBounce {
+  0%   { transform: scale(1.00); filter: brightness(1.02); }
+  30%  { transform: scale(1.10); filter: brightness(1.06); }
+  60%  { transform: scale(1.04); filter: brightness(1.03); }
+  100% { transform: scale(1.00); filter: none; }
 }
 
 /* Chart Customizations */

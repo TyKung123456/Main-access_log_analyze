@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Download, ChevronDown, ChevronUp, Calendar, Check, X, ArrowUp, ArrowDown, User, Globe, Upload, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
-import QuickInsights from './QuickInsights.jsx';
 import apiService from '../../services/apiService';
 
 const presets = [
@@ -71,9 +70,11 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
   const [datePreset, setDatePreset] = useState('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  // Year filter
+  const [year, setYear] = useState('all');
 
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit] = useState(100);
   const [sort, setSort] = useState({ column: 'Date Time', order: 'DESC' });
 
   const [rows, setRows] = useState([]);
@@ -101,6 +102,30 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
   const [utQuery, setUtQuery] = useState('');
   const [doorQuery, setDoorQuery] = useState('');
 
+  // Handle sidebar section jumps
+  useEffect(() => {
+    const onJump = (e) => {
+      const id = e?.detail?.sectionId;
+      if (!id || !String(id).startsWith('logs-')) return;
+      try {
+        const el = document.getElementById(id);
+        if (el) {
+          setLogsCollapsed(false);
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // retrigger animation even if already present
+          el.classList.remove('jump-flash');
+          void el.offsetWidth; // force reflow
+          el.classList.add('jump-flash');
+          setTimeout(() => {
+            el.classList.remove('jump-flash');
+          }, 1800);
+        }
+      } catch {}
+    };
+    window.addEventListener('jumpTo', onJump);
+    return () => window.removeEventListener('jumpTo', onJump);
+  }, []);
+
   const params = useMemo(() => {
     const base = { page, limit, sort: sort.column, order: sort.order };
     if (search?.trim()) base.search = search.trim();
@@ -115,12 +140,24 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
       if (r.startDate) base.startDate = r.startDate;
       if (r.endDate) base.endDate = r.endDate;
     }
+    // Year override (per-year filter)
+    if (year !== 'all') {
+      const y = parseInt(year, 10);
+      if (!isNaN(y)) {
+        const ys = new Date(y, 0, 1, 0, 0, 0, 0);
+        const ye = new Date(y, 11, 31, 23, 59, 59, 999);
+        base.startDate = ys.toISOString();
+        base.endDate = ye.toISOString();
+      }
+    }
     if (selectedLocations.length > 0) base.location = selectedLocations;
     if (selectedDirections.length > 0) base.direction = selectedDirections;
     if (selectedUserTypes.length > 0) base.userType = selectedUserTypes;
     if (selectedDoors.length > 0) base.doors = selectedDoors;
     return base;
-  }, [page, limit, sort, search, action, datePreset, customStart, customEnd, selectedLocations, selectedDirections, selectedUserTypes, selectedDoors]);
+  }, [page, limit, sort, search, action, datePreset, customStart, customEnd, year, selectedLocations, selectedDirections, selectedUserTypes, selectedDoors]);
+
+  // Logs follow selected date range (no realtime mode)
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -140,6 +177,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(params)]);
+  
 
   // Load/refresh filter option counts based on current filters (faceted)
   useEffect(() => {
@@ -220,6 +258,8 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
     });
   };
 
+  // No grouping; render exact timestamp per row
+
   const setSortColumn = (column) => {
     setSort((prev) => ({
       column,
@@ -261,17 +301,18 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
 
   return (
     <div className="space-y-4">
+      <div id="quick-insights-anchor" />
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Transaction Log</h1>
       </div>
 
-      <div className="bg-white rounded-xl border shadow-sm p-4 ring-1 ring-black/5">
+      <div id="logs-filters" className="bg-white rounded-xl border shadow-sm p-4 ring-1 ring-black/5">
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-medium text-gray-700">ตัวกรอง</div>
           <div className="text-xs text-gray-600">ใช้งานอยู่ {
             [search?.trim()?1:0,
              action!=='all'?1:0,
-             (datePreset!=='all' || (datePreset==='custom' && customStart && customEnd))?1:0,
+             (year!=='all' || datePreset!=='all' || (datePreset==='custom' && customStart && customEnd))?1:0,
              selectedLocations.length>0?1:0,
              selectedDirections.length>0?1:0,
              selectedUserTypes.length>0?1:0,
@@ -279,7 +320,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
             ].reduce((a,b)=>a+b,0)
           } รายการ</div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <div>
             <label className="block text-sm text-gray-600 mb-1">ค้นหา</label>
             <div className="flex items-center gap-2">
@@ -323,6 +364,36 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                 {presets.map(o => (<option key={o.key} value={o.key}>{o.label}</option>))}
               </select>
               <Calendar className="w-4 h-4 text-gray-400 absolute right-7 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">ปี</label>
+            <div className="relative">
+              <select
+                className="w-full appearance-none pr-8 pl-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                value={year}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setYear(v);
+                  if (v !== 'all') {
+                    const y = parseInt(v, 10);
+                    if (!isNaN(y)) {
+                      setDatePreset('custom');
+                      setCustomStart(new Date(y, 0, 1).toISOString().slice(0,10));
+                      setCustomEnd(new Date(y, 11, 31).toISOString().slice(0,10));
+                    }
+                  }
+                }}
+              >
+                {(() => {
+                  const out = [<option key="all" value="all">ทั้งหมด</option>];
+                  const now = new Date().getFullYear();
+                  for (let y = now; y >= now - 6; y--) out.push(<option key={y} value={y}>{y}</option>);
+                  return out;
+                })()}
+              </select>
+              <Calendar className="w-4 h-4 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
 
@@ -578,7 +649,7 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
           </button>
         </div>
         {!logsCollapsed && (
-        <div className="overflow-x-auto">
+        <div id="logs-table" className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="text-gray-600">
               <tr className="bg-gray-50">
@@ -633,15 +704,12 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                             if (!dateTimeStr) return '-';
                             try {
                               const date = new Date(dateTimeStr);
-                              if (isNaN(date.getTime())) return dateTimeStr; // Fallback if invalid date
-                              const hour = date.getHours();
-                              const nextHour = (hour + 1) % 24;
-                              const formattedHour = String(hour).padStart(2, '0');
-                              const formattedNextHour = String(nextHour).padStart(2, '0');
-                              return `${date.toLocaleDateString('th-TH')} ${formattedHour}:00 - ${formattedNextHour}:00`;
-                            } catch (e) {
-                              console.error("Error parsing date for time range:", e);
-                              return dateTimeStr; // Fallback on error
+                              if (isNaN(date.getTime())) return dateTimeStr;
+                              const d = date.toLocaleDateString('th-TH');
+                              const t = date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+                              return `${d} ${t}`;
+                            } catch {
+                              return dateTimeStr;
                             }
                           })()}
                         </td>
@@ -673,30 +741,39 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
                           <td></td>
                           <td colSpan={5} className="px-4 py-3">
                             {(() => {
-                              const details = [
-                                { label: 'ชื่อบัตร', value: r['Card Name'] || r.cardName },
-                                { label: 'ประเภทผู้ใช้', value: r['User Type'] || r.userType },
-                                { label: 'สถานที่', value: r['Location'] || r.location },
-                                { label: 'ประตู', value: r['Door'] || r.door },
-                                { label: 'ทิศทาง', value: r['Direction'] || r.direction },
-                                { label: 'เหตุผล', value: r['Reason'] || r.reason },
-                                // Additional fields that may appear in data
-                                { label: 'อุปกรณ์', value: r['Device'] || r.device },
-                                { label: 'ช่องทาง', value: r['Channel'] || r.channel },
-                                { label: 'สิทธิ์', value: r['Permission'] || r.permission },
-                                { label: 'อุณหภูมิ', value: r['Temp.'] || r.temperature || r.temp },
-                                { label: 'ผู้ใช้ (Hash)', value: r['User Hash'] || r.userHash },
-                                { label: 'หมายเลขบัตร (Hash)', value: r['Card Number Hash'] || r.cardNumberHash },
-                              ].filter(d => !isEmptyish(d.value));
-
+                              // Dynamic details: show all available columns for a complete review
+                              const displayName = (key) => ({
+                                'Date Time': 'วันที่เวลา', 'dateTime': 'วันที่เวลา',
+                                'Card Name': 'ชื่อบัตร', 'cardName': 'ชื่อบัตร',
+                                'Location': 'สถานที่', 'location': 'สถานที่',
+                                'Reason': 'เหตุผล', 'reason': 'เหตุผล',
+                                'Allow': 'ผลลัพธ์', 'allow': 'ผลลัพธ์',
+                                'Direction': 'ทิศทาง', 'direction': 'ทิศทาง',
+                                'Door': 'ประตู', 'door': 'ประตู',
+                                'Device': 'อุปกรณ์', 'device': 'อุปกรณ์',
+                                'User Type': 'ประเภทผู้ใช้', 'userType': 'ประเภทผู้ใช้',
+                                'Permission': 'สิทธิ์', 'permission': 'สิทธิ์',
+                                'Channel': 'ช่องทาง', 'channel': 'ช่องทาง',
+                                'Temp.': 'อุณหภูมิ', 'temperature': 'อุณหภูมิ', 'temp': 'อุณหภูมิ',
+                                'User Hash': 'ผู้ใช้ (Hash)', 'userHash': 'ผู้ใช้ (Hash)',
+                                'Card Number Hash': 'หมายเลขบัตร (Hash)', 'cardNumberHash': 'หมายเลขบัตร (Hash)',
+                                'Transaction ID': 'รหัสธุรกรรม', 'id': 'รหัสธุรกรรม'
+                              })[key] || key;
+                              const priority = ['Date Time','dateTime','Card Name','cardName','Location','location','Door','door','Direction','direction','Reason','reason','Allow','allow','User Type','userType','Permission','permission','Device','device','Channel','channel','Temp.','temperature','temp','User Hash','userHash','Card Number Hash','cardNumberHash','Transaction ID','id'];
+                              const keys = Object.keys(r || {});
+                              const ordered = [
+                                ...priority.filter(k => keys.includes(k)),
+                                ...keys.filter(k => !priority.includes(k)).sort((a,b)=>a.localeCompare(b))
+                              ];
+                              const rows = ordered.map(k => ({ key: k, label: displayName(k), value: r[k] })).filter(d => !isEmptyish(d.value));
                               return (
                                 <>
-                                  {details.length > 0 && (
+                                  {rows.length > 0 && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-700">
-                                      {details.map((d, i) => (
+                                      {rows.map((d, i) => (
                                         <div key={i}>
                                           <div className="text-gray-500">{d.label}</div>
-                                          <div className="font-medium">{clean(d.value)}</div>
+                                          <div className="font-medium break-words">{clean(d.value)}</div>
                                         </div>
                                       ))}
                                     </div>
@@ -761,8 +838,9 @@ const TransactionLogPage = ({ onRowClick, onOpenUpload }) => {
         </div>
       </div>
 
-      {/* Quick Insights Charts */}
-      <QuickInsights params={params} />
+  {/* กราฟรวมถูกย้ายไปที่หน้า ภาพรวมข้อมูล & วิเคราะห์ */}
+
+  
 
       {/* Floating upload button (bottom-right) */}
       {onOpenUpload && (

@@ -93,16 +93,19 @@ const QuickInsights = ({ params }) => {
   }, [JSON.stringify(params)]);
 
   const top5Locations = useMemo(() => {
-    return (location.data || [])
+    const items = (location.data || [])
       .map(i => ({
         name: clean(i.location || i.locationDisplay),
         count: parseInt(i.count) || 0,
         success: parseInt(i.success) || parseInt(i.successfulAccess) || 0,
         denied: parseInt(i.denied) || parseInt(i.deniedAccess) || 0,
       }))
-      .filter(i => !isEmptyish(i.name))
+      .filter(i => !isEmptyish(i.name));
+    const total = items.reduce((s, it) => s + (it.count || 0), 0) || 1;
+    return items
       .sort((a,b) => b.count - a.count)
-      .slice(0,5);
+      .slice(0,5)
+      .map(it => ({ ...it, pct: Math.round((it.count / total) * 1000) / 10 })); // one decimal place
   }, [location.data]);
 
   const openLocationDetail = async (name) => {
@@ -115,9 +118,15 @@ const QuickInsights = ({ params }) => {
       const query = { ...(params || {}), page: 1, limit: 50000, location: [name] };
       const res = await apiService.getLogs(query);
       const rows = res?.data || [];
+      const isAllowish = (v) => {
+        if (v === true || v === 1) return true;
+        const s = String(v ?? '').trim().toLowerCase();
+        return ['true','t','1','yes','y','success','allow','allowed','pass','granted','verify success'].includes(s) || s.includes('success');
+      };
+      const firstTruthy = (...vals) => vals.find(v => v !== undefined && v !== null && String(v).trim() !== '');
       const normalize = (r) => ({
         dt: new Date(r['Date Time'] || r.dateTime),
-        allow: (r.Allow === true || r.Allow === 't' || r.allow === true),
+        allow: isAllowish(firstTruthy(r.Allow, r.allow, r['Allow Status'], r.allowStatus, r['Access Result'], r.accessResult, r.Result, r.result, r.Status, r.status, r['Reason'], r.reason)),
         location: clean(r.Location || r.location),
         cardName: clean(r['Card Name'] || r.cardName || r['Card Number'] || r.cardNumber),
         reason: clean(r.Reason || r.reason)
@@ -128,6 +137,12 @@ const QuickInsights = ({ params }) => {
       const users = new Set();
       const reasons = new Map();
       let lastTime = null;
+      const isSuccessReason = (txt) => {
+        if (isEmptyish(txt)) return false;
+        const s = String(txt).trim().toLowerCase();
+        return s === 'verify success' || s === 'success' || s.includes('success') || s === 'allow' || s === 'allowed' || s.includes('granted') || s === 'pass' || s === 'passed';
+      };
+
       for (const it of items) {
         if (!it.allow) denied++;
         const h = it.dt.getHours();
@@ -135,7 +150,10 @@ const QuickInsights = ({ params }) => {
         if (h >= 22 || h <= 6) offHours++;
         if (d === 0 || d === 6) weekend++;
         if (!isEmptyish(it.cardName)) users.add(it.cardName);
-        if (!isEmptyish(it.reason)) reasons.set(it.reason, (reasons.get(it.reason) || 0) + 1);
+        // เก็บเฉพาะเหตุผลที่เป็นความผิดปกติ/ปฏิเสธ ไม่ใช่ข้อความสำเร็จ
+        if (!isEmptyish(it.reason) && (!it.allow) && !isSuccessReason(it.reason)) {
+          reasons.set(it.reason, (reasons.get(it.reason) || 0) + 1);
+        }
         if (!lastTime || it.dt > lastTime) lastTime = it.dt;
       }
       const deniedPct = total > 0 ? (denied/total)*100 : 0;
@@ -209,7 +227,7 @@ const QuickInsights = ({ params }) => {
                   >
                     <div className="font-medium text-gray-900 truncate">{idx+1}. {l.name}</div>
                     <div className="text-xs text-gray-600 truncate">
-                      รวม {l.count.toLocaleString('th-TH')} • ปฏิเสธ {l.denied.toLocaleString('th-TH')}
+                      รวม {l.count.toLocaleString('th-TH')} ครั้ง ({(l.pct ?? 0).toFixed(1)}%) • ปฏิเสธ {l.denied.toLocaleString('th-TH')}
                       {l.count > 0 && (
                         <span className="ml-1">({((l.denied / l.count) * 100).toFixed(1)}%)</span>
                       )}
@@ -261,7 +279,7 @@ const QuickInsights = ({ params }) => {
                   </div>
                   {Array.isArray(locDetail.reasonsSorted) && locDetail.reasonsSorted.length > 0 && (
                     <div className="text-sm text-gray-700">
-                      สาเหตุ{showAllReasons ? 'ทั้งหมด' : 'ยอดฮิต'} ({locDetail.reasonsSorted.length.toLocaleString('th-TH')} รายการ):
+                      เหตุผลการปฏิเสธ{showAllReasons ? 'ทั้งหมด' : 'ที่พบบ่อย'} ({locDetail.reasonsSorted.length.toLocaleString('th-TH')} รายการ):
                       <ul className="list-disc pl-5 mt-1 text-xs text-gray-600 max-h-52 overflow-auto">
                         {(showAllReasons ? locDetail.reasonsSorted : locDetail.reasonsSorted.slice(0,10)).map(([reason, cnt], idx) => (
                           <li key={idx}>{reason || '(ไม่ระบุ)'} — {cnt.toLocaleString('th-TH')} ครั้ง</li>

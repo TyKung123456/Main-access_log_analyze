@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import aiService from '../../services/aiService';
 // AI customization removed by request
 
@@ -14,6 +14,10 @@ const CasesPage = () => {
   const [displayMode, setDisplayMode] = useState('modal'); // 'modal' | 'inline'
   const [search, setSearch] = useState('');
   const resultsRef = useRef(null);
+  // Category filter removed per request
+  // Simple filters for results
+  const [filterAllow, setFilterAllow] = useState('all'); // all|allow|deny
+  const [filterLocation, setFilterLocation] = useState('all');
 
   // Export options
   const [exportPickerOpen, setExportPickerOpen] = useState(false);
@@ -34,6 +38,10 @@ const CasesPage = () => {
       }
     })();
   }, []);
+
+  // Categories removed from UI
+
+  const selectedCase = useMemo(() => caseList.find(c => c.id === selectedId) || null, [caseList, selectedId]);
 
   const runCase = async (id) => {
     setSelectedId(id);
@@ -220,6 +228,25 @@ const CasesPage = () => {
     };
   };
 
+  const summary = useMemo(() => analyzeRows(result.rows || []), [result.rows]);
+  const filteredRows = useMemo(() => {
+    let rows = Array.isArray(result.rows) ? result.rows : [];
+    if (filterAllow !== 'all') {
+      rows = rows.filter(r => {
+        const val = String(r['Allow'] ?? r['allow'] ?? '').toLowerCase();
+        const allowish = ['true','t','1','yes','y','success','allow','allowed','pass','granted','อนุญาต'];
+        const deniedish = ['false','f','0','no','n','deny','denied','fail','failed','blocked','ปฏิเสธ'];
+        const isAllow = allowish.includes(val);
+        const isDenied = deniedish.includes(val);
+        return filterAllow === 'allow' ? isAllow : isDenied;
+      });
+    }
+    if (filterLocation !== 'all') {
+      rows = rows.filter(r => (r['Location'] || r['location']) === filterLocation);
+    }
+    return rows;
+  }, [result.rows, filterAllow, filterLocation]);
+
   // Produce rule-based recommendations from summary
   const buildRecommendations = (s) => {
     const recs = [];
@@ -400,10 +427,29 @@ const CasesPage = () => {
     download();
   };
 
+  // JumpTo listener for sidebar sections
+  useEffect(() => {
+    const onJump = (e) => {
+      const id = e?.detail?.sectionId;
+      if (!id || !String(id).startsWith('cases-')) return;
+      try {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('jump-pop');
+        void el.offsetWidth;
+        el.classList.add('jump-pop');
+        setTimeout(() => el.classList.remove('jump-pop'), 1200);
+      } catch {}
+    };
+    window.addEventListener('jumpTo', onJump);
+    return () => window.removeEventListener('jumpTo', onJump);
+  }, []);
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-gray-900">รายงานตามเคส</h2>
+        <h2 id="cases-new" className="text-base font-semibold text-gray-900 rounded-xl">รายงานตามเคส</h2>
         <div className="flex items-center gap-2">
           <div className="hidden md:flex items-center gap-2 text-xs text-gray-600">
             <span className="mr-1">โหมดแสดงผล:</span>
@@ -456,7 +502,7 @@ const CasesPage = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Left sticky list with search */}
-        <div className="space-y-2 md:sticky md:top-4 md:max-h-[calc(100vh-8rem)] md:overflow-auto pr-1">
+        <div id="cases-list" className="space-y-2 md:sticky md:top-4 md:max-h-[calc(100vh-8rem)] md:overflow-auto pr-1 rounded-xl">
           <div className="relative mb-1">
             <input
               className="w-full border rounded px-3 py-2 text-sm pr-8"
@@ -466,18 +512,19 @@ const CasesPage = () => {
             />
             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">⌘K</span>
           </div>
+          {/* Category filter removed */}
           {caseList.length === 0 ? (
             <div className="text-sm text-gray-500">ไม่มีรายการเคส</div>
           ) : caseList
-            .filter(c => !search || [c.title, c.category, c.id].some(v => String(v || '').toLowerCase().includes(search.toLowerCase())))
+            .filter(c => !search || [c.title, c.category, c.id, c.description]
+              .some(v => String(v || '').toLowerCase().includes(search.toLowerCase())))
             .map(c => (
               <button
                 key={c.id}
                 onClick={() => runCase(c.id)}
-                className={`w-full text-left px-3 py-2 rounded border text-sm ${selectedId === c.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                className={`w-full text-left px-2 py-1.5 rounded border text-sm ${selectedId === c.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
               >
-                <div className="text-sm font-medium text-gray-800">{c.title}</div>
-                <div className="text-xs text-gray-500">{c.category}</div>
+                <div className="text-sm font-medium text-gray-800 truncate" title={c.title}>{c.title}</div>
               </button>
             ))}
         </div>
@@ -492,6 +539,9 @@ const CasesPage = () => {
                   <div className="text-xs text-gray-600 mt-0.5">
                     {caseList.find(c => c.id === selectedId)?.title || 'โปรดรอสักครู่'}
                   </div>
+                  {selectedCase?.description && (
+                    <div className="text-xs text-gray-600 mt-0.5 max-w-prose">{selectedCase.description}</div>
+                  )}
                   <div className="mt-1 inline-flex items-center gap-1 text-xs text-indigo-700 bg-indigo-50 rounded px-2 py-0.5 border border-indigo-200">
                     <span role="img" aria-label="timer">⏱️</span>
                     <span>เวลาที่ผ่านไป: {fmtSec(loadingSeconds)}</span>
@@ -529,7 +579,7 @@ const CasesPage = () => {
             displayMode === 'inline' ? (
               <div ref={resultsRef} className="overflow-auto border rounded max-h-[calc(100vh-10rem)]">
                 <div className="sticky top-0 z-10 bg-white/90 backdrop-blur px-3 py-2 border-b flex items-center justify-between">
-                  <div className="text-sm text-gray-700">ผลลัพธ์: {result.count.toLocaleString('th-TH')} แถว</div>
+                  <div className="text-sm text-gray-700">ผลลัพธ์: {filteredRows.length.toLocaleString('th-TH')} แถว</div>
                   <button
                     onClick={() => resultsRef.current && (resultsRef.current.scrollTop = 0)}
                     className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-white/70 text-blue-700 ring-1 ring-blue-200 hover:bg-blue-50 hover:ring-blue-300 shadow-sm transition-colors"
@@ -538,6 +588,93 @@ const CasesPage = () => {
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M5 15l7-7 7 7" /></svg>
                   </button>
+                </div>
+                {selectedCase?.description && (
+                  <div className="px-3 py-2 text-xs text-gray-600 border-b bg-white">{selectedCase.description}</div>
+                )}
+                {/* Summary + Filters */}
+                <div className="px-3 py-2 border-b bg-gray-50">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                    <div>
+                      <div className="text-lg font-semibold text-gray-900">{summary.total.toLocaleString('th-TH')}</div>
+                      <div className="text-xs text-gray-600">รวมทั้งหมด</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-green-600">{summary.allowed.toLocaleString('th-TH')}</div>
+                      <div className="text-xs text-gray-600">อนุญาต</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-red-600">{summary.denied.toLocaleString('th-TH')}</div>
+                      <div className="text-xs text-gray-600">ปฏิเสธ</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-blue-600">{(Math.round(summary.deniedRate*10)/10).toLocaleString('th-TH')}%</div>
+                      <div className="text-xs text-gray-600">อัตราปฏิเสธ</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <label className="inline-flex items-center gap-1">ผลลัพธ์
+                      <select className="border rounded px-2 py-1" value={filterAllow} onChange={e=>setFilterAllow(e.target.value)}>
+                        <option value="all">ทั้งหมด</option>
+                        <option value="allow">อนุญาต</option>
+                        <option value="deny">ปฏิเสธ</option>
+                      </select>
+                    </label>
+                    <label className="inline-flex items-center gap-1">สถานที่
+                      <select className="border rounded px-2 py-1" value={filterLocation} onChange={e=>setFilterLocation(e.target.value)}>
+                        <option value="all">ทั้งหมด</option>
+                        {Object.keys(summary.locations || {}).filter(Boolean).slice(0,50).map(loc => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {(filterAllow!=='all' || filterLocation!=='all') && (
+                      <button className="px-2 py-1 border rounded bg-white hover:bg-gray-50" onClick={()=>{ setFilterAllow('all'); setFilterLocation('all'); }}>ล้างตัวกรอง</button>
+                    )}
+                  </div>
+                  {/* Simple charts for web use (Top Reasons, Top Locations) */}
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="bg-white rounded border p-3">
+                      <div className="text-xs font-medium text-gray-700 mb-2">เหตุผลที่พบบ่อย</div>
+                      {summary.topReasons && summary.topReasons.length > 0 ? (
+                        <ul className="space-y-1">
+                          {summary.topReasons.slice(0,5).map(([label, cnt], i) => (
+                            <li key={i} className="flex items-center gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-gray-800 truncate" title={label}>{label}</div>
+                                <div className="h-2 bg-gray-100 rounded mt-1">
+                                  <div className="h-2 bg-blue-500 rounded" style={{ width: `${Math.min(100, (cnt/Math.max(1, summary.topReasons[0][1]))*100)}%` }} />
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-700 w-10 text-right">{cnt}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-xs text-gray-500">ไม่มีข้อมูล</div>
+                      )}
+                    </div>
+                    <div className="bg-white rounded border p-3">
+                      <div className="text-xs font-medium text-gray-700 mb-2">สถานที่ที่พบบ่อย</div>
+                      {summary.topLocations && summary.topLocations.length > 0 ? (
+                        <ul className="space-y-1">
+                          {summary.topLocations.slice(0,5).map(([label, cnt], i) => (
+                            <li key={i} className="flex items-center gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-gray-800 truncate" title={label}>{label}</div>
+                                <div className="h-2 bg-gray-100 rounded mt-1">
+                                  <div className="h-2 bg-emerald-500 rounded" style={{ width: `${Math.min(100, (cnt/Math.max(1, summary.topLocations[0][1]))*100)}%` }} />
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-700 w-10 text-right">{cnt}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-xs text-gray-500">ไม่มีข้อมูล</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-50">
@@ -548,7 +685,7 @@ const CasesPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {(result.rows || []).slice(0, 500).map((r, idx) => (
+                    {filteredRows.slice(0, 500).map((r, idx) => (
                       <tr key={idx} className="border-t">
                         {Object.keys(r).map(k => (
                           <td key={k} className="px-2 py-1 whitespace-nowrap text-gray-800">{String(r[k] ?? '')}</td>
@@ -572,6 +709,90 @@ const CasesPage = () => {
                     </div>
                   </div>
                   <div className="overflow-auto" style={{ maxHeight: '75vh' }}>
+                    {/* Summary + Filters */}
+                    <div className="px-3 py-2 border-b bg-gray-50 sticky top-0 z-10">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                        <div>
+                          <div className="text-lg font-semibold text-gray-900">{summary.total.toLocaleString('th-TH')}</div>
+                          <div className="text-xs text-gray-600">รวมทั้งหมด</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-semibold text-green-600">{summary.allowed.toLocaleString('th-TH')}</div>
+                          <div className="text-xs text-gray-600">อนุญาต</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-semibold text-red-600">{summary.denied.toLocaleString('th-TH')}</div>
+                          <div className="text-xs text-gray-600">ปฏิเสธ</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-semibold text-blue-600">{(Math.round(summary.deniedRate*10)/10).toLocaleString('th-TH')}%</div>
+                          <div className="text-xs text-gray-600">อัตราปฏิเสธ</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <label className="inline-flex items-center gap-1">ผลลัพธ์
+                          <select className="border rounded px-2 py-1" value={filterAllow} onChange={e=>setFilterAllow(e.target.value)}>
+                            <option value="all">ทั้งหมด</option>
+                            <option value="allow">อนุญาต</option>
+                            <option value="deny">ปฏิเสธ</option>
+                          </select>
+                        </label>
+                        <label className="inline-flex items-center gap-1">สถานที่
+                          <select className="border rounded px-2 py-1" value={filterLocation} onChange={e=>setFilterLocation(e.target.value)}>
+                            <option value="all">ทั้งหมด</option>
+                            {Object.keys(summary.locations || {}).filter(Boolean).slice(0,50).map(loc => (
+                              <option key={loc} value={loc}>{loc}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {(filterAllow!=='all' || filterLocation!=='all') && (
+                          <button className="px-2 py-1 border rounded bg-white hover:bg-gray-50" onClick={()=>{ setFilterAllow('all'); setFilterLocation('all'); }}>ล้างตัวกรอง</button>
+                        )}
+                      </div>
+                      {/* Simple charts for web use (Top Reasons, Top Locations) */}
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-white rounded border p-3">
+                          <div className="text-xs font-medium text-gray-700 mb-2">เหตุผลที่พบบ่อย</div>
+                          {summary.topReasons && summary.topReasons.length > 0 ? (
+                            <ul className="space-y-1">
+                              {summary.topReasons.slice(0,5).map(([label, cnt], i) => (
+                                <li key={i} className="flex items-center gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs text-gray-800 truncate" title={label}>{label}</div>
+                                    <div className="h-2 bg-gray-100 rounded mt-1">
+                                      <div className="h-2 bg-blue-500 rounded" style={{ width: `${Math.min(100, (cnt/Math.max(1, summary.topReasons[0][1]))*100)}%` }} />
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-700 w-10 text-right">{cnt}</div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="text-xs text-gray-500">ไม่มีข้อมูล</div>
+                          )}
+                        </div>
+                        <div className="bg-white rounded border p-3">
+                          <div className="text-xs font-medium text-gray-700 mb-2">สถานที่ที่พบบ่อย</div>
+                          {summary.topLocations && summary.topLocations.length > 0 ? (
+                            <ul className="space-y-1">
+                              {summary.topLocations.slice(0,5).map(([label, cnt], i) => (
+                                <li key={i} className="flex items-center gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs text-gray-800 truncate" title={label}>{label}</div>
+                                    <div className="h-2 bg-gray-100 rounded mt-1">
+                                      <div className="h-2 bg-emerald-500 rounded" style={{ width: `${Math.min(100, (cnt/Math.max(1, summary.topLocations[0][1]))*100)}%` }} />
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-gray-700 w-10 text-right">{cnt}</div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="text-xs text-gray-500">ไม่มีข้อมูล</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                     <table className="min-w-full text-xs">
                       <thead className="bg-gray-50">
                         <tr>
@@ -581,7 +802,7 @@ const CasesPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {(result.rows || []).slice(0, 500).map((r, idx) => (
+                        {filteredRows.slice(0, 500).map((r, idx) => (
                           <tr key={idx} className="border-t">
                             {Object.keys(r).map(k => (
                               <td key={k} className="px-2 py-1 whitespace-nowrap text-gray-800">{String(r[k] ?? '')}</td>
@@ -662,6 +883,7 @@ const CasesPage = () => {
           </div>
         </div>
       )}
+      
     </div>
   );
 };

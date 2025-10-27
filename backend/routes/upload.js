@@ -371,6 +371,7 @@ router.post('/batch-append', async (req, res) => {
 
     let insertedCount = 0;
     let duplicatesSkipped = 0;
+    let failedRows = 0;
     
     const insertQuery = `
       INSERT INTO "public"."real_log_analyze" (
@@ -380,29 +381,88 @@ router.post('/batch-append', async (req, res) => {
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
       )
-      ON CONFLICT ("Transaction ID") DO NOTHING
+      ON CONFLICT ("Transaction ID") DO UPDATE SET
+        "Date Time" = EXCLUDED."Date Time",
+        "Door" = EXCLUDED."Door",
+        "Device" = EXCLUDED."Device",
+        "Location" = EXCLUDED."Location",
+        "Direction" = EXCLUDED."Direction",
+        "Allow" = EXCLUDED."Allow",
+        "Reason" = EXCLUDED."Reason",
+        "Channel" = EXCLUDED."Channel",
+        "Card Name" = EXCLUDED."Card Name",
+        "Card Number Hash" = EXCLUDED."Card Number Hash",
+        "ID Hash" = EXCLUDED."ID Hash",
+        "User Hash" = EXCLUDED."User Hash",
+        "User Type" = EXCLUDED."User Type",
+        "Permission" = EXCLUDED."Permission",
+        "Temp." = EXCLUDED."Temp."
       RETURNING "Transaction ID"
     `;
 
-    for (const log of logs) {
-      // Backend validation
-      if (!log['Date Time'] || !log['Card Name'] || !log['Location']) {
-        console.warn('Skipping invalid row:', log);
+    for (const raw of logs) {
+      // Accept both original header keys and cleaned camelCase keys
+      const log = raw || {};
+
+      const dateTime = log['Date Time'] ?? log.dateTime;
+      const cardName = log['Card Name'] ?? log.cardName;
+      const location = log['Location'] ?? log.location;
+
+      // ผ่อนกฎ: อนุญาตให้ค่าว่าง, เก็บเป็น NULL ถ้าไม่มีค่า
+
+      const transactionId = log['Transaction ID'] ?? log.transactionId ?? null;
+      const door = log['Door'] ?? log.door ?? null;
+      const device = log['Device'] ?? log.device ?? null;
+      const direction = log['Direction'] ?? log.direction ?? null;
+      const allow = log['Allow'] ?? log.allow ?? null;
+      const reason = log['Reason'] ?? log.reason ?? null;
+      const channel = log['Channel'] ?? log.channel ?? null;
+      const cardNumberHash = log['Card Number Hash'] ?? log.cardNumberHash ?? null;
+      const idHash = log['ID Hash'] ?? log.idHash ?? null;
+      const userHash = log['User Hash'] ?? log.userHash ?? null;
+      const userType = log['User Type'] ?? log.userType ?? null;
+      const permission = log['Permission'] ?? log.permission ?? null;
+      const temp = (log['Temp.'] ?? log.temp ?? null);
+
+      // Normalize allow boolean using helper if available
+      const allowBool = typeof allow === 'boolean' ? allow : parseAllowValue(allow);
+
+      // Skip rows that are completely empty (no meaningful value at all)
+      const valuesForCheck = [
+        dateTime, transactionId, door, device, location, direction,
+        allowBool, reason, channel, cardName, cardNumberHash, idHash,
+        userHash, userType, permission, temp
+      ];
+      const hasAnyValue = valuesForCheck.some(v => {
+        if (v === null || v === undefined) return false;
+        if (typeof v === 'string') return v.trim() !== '';
+        return true;
+      });
+      if (!hasAnyValue) {
+        // Completely empty row, skip without counting as failure
         continue;
       }
-      
-      const values = [
-        log['Date Time'], log['Transaction ID'], log['Door'], log['Device'], log['Location'],
-        log['Direction'], log['Allow'], log['Reason'], log['Channel'], log['Card Name'],
-        log['Card Number Hash'], log['ID Hash'], log['User Hash'], log['User Type'], 
-        log['Permission'], parseFloat(log['Temp.']) || null
-      ];
-      
-      const result = await client.query(insertQuery, values);
-      if (result.rows.length > 0) {
-        insertedCount++;
-      } else {
-        duplicatesSkipped++;
+
+      // Attempt to insert; if a row fails, rollback to savepoint and continue
+      await client.query('SAVEPOINT sp_row');
+      try {
+        const values = [
+          dateTime, transactionId, door, device, location,
+          direction, allowBool, reason, channel, cardName,
+          cardNumberHash, idHash, userHash, userType, 
+          permission, (temp === null ? null : parseFloat(temp) || null)
+        ];
+        const result = await client.query(insertQuery, values);
+        if (result.rows.length > 0) {
+          insertedCount++;
+        } else {
+          duplicatesSkipped++;
+        }
+      } catch (rowErr) {
+        // Skip only this row
+        await client.query('ROLLBACK TO SAVEPOINT sp_row');
+        failedRows++;
+        continue;
       }
     }
 
@@ -413,6 +473,7 @@ router.post('/batch-append', async (req, res) => {
       message: `บันทึกข้อมูล ${insertedCount.toLocaleString()} รายการเรียบร้อยแล้ว`,
       insertedCount,
       duplicatesSkipped,
+      failedRows,
       totalProcessed: logs.length
     });
 

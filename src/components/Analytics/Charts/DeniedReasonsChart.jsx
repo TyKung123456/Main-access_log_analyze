@@ -40,17 +40,18 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
   const [viewMode, setViewMode] = useState('pie'); // 'pie' หรือ 'bar'
 
   // ปรับปรุงการประมวลผลข้อมูลให้กระชับขึ้น
-  const processedData = useMemo(() => {
+  const { processedData, totalDeniedAll, topReason } = useMemo(() => {
     const reasonCounts = {};
 
-    data.forEach(item => {
-      if (item.status === 'denied' && !isEmptyish(item.reason)) {
+    (data || []).forEach(item => {
+      const denied = (item.allow === false) || item.status === 'denied' || item.accessResult === 'DENIED';
+      if (denied && !isEmptyish(item.reason)) {
         const r = String(item.reason).trim();
         reasonCounts[r] = (reasonCounts[r] || 0) + 1;
       }
     });
 
-    return Object.entries(reasonCounts)
+    const all = Object.entries(reasonCounts)
       .map(([reason, count]) => ({
         name: reason,
         value: count,
@@ -58,17 +59,19 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
         category: categorizeReason(reason),
         severity: getSeverityLevel(reason)
       }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8); // แสดงแค่ 8 อันดับแรก
-  }, [data]);
+      .sort((a, b) => b.value - a.value);
 
-  // สถิติพื้นฐาน
-  const totalDenied = processedData.reduce((sum, item) => sum + item.value, 0);
+    const totalDeniedAll = all.reduce((sum, it) => sum + it.value, 0);
+    const processedData = all.slice(0, 8);
+    const topReason = all[0] || null;
+    return { processedData, totalDeniedAll, topReason };
+  }, [data]);
 
   // Custom tooltip ที่ดูสะอาดขึ้น
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0];
+      const denom = totalDeniedAll || 1;
       return (
         <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
           <p className="text-sm font-medium text-gray-900">{data.payload.name}</p>
@@ -76,7 +79,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
             จำนวน: <span className="font-semibold text-blue-600">{data.value}</span> ครั้ง
           </p>
           <p className="text-xs text-gray-500">
-            {((data.value / totalDenied) * 100).toFixed(1)}% ของทั้งหมด
+            {((data.value / denom) * 100).toFixed(1)}% ของทั้งหมด
           </p>
         </div>
       );
@@ -103,9 +106,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">เหตุผลการปฏิเสธ</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              รวม {totalDenied.toLocaleString('th-TH')} ครั้ง
-            </p>
+            <p className="text-sm text-gray-600 mt-1">รวม {totalDeniedAll.toLocaleString('th-TH')} ครั้ง</p>
           </div>
 
           {/* Toggle view mode */}
@@ -211,7 +212,7 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
                     {item.shortName}
                   </span>
                   <span className="text-gray-500 ml-auto">
-                    {((item.value / totalDenied) * 100).toFixed(0)}%
+                    {(((item.value) / (totalDeniedAll || 1)) * 100).toFixed(0)}%
                   </span>
                 </div>
               ))}
@@ -231,13 +232,13 @@ const DeniedReasonsChart = ({ data = [], loading = false }) => {
               </div>
               <div>
                 <div className="text-lg font-semibold text-blue-600">
-                  {processedData[0]?.value || 0}
+                  {topReason?.value || 0}
                 </div>
-                <div className="text-xs text-gray-600">สาเหตุหลัก</div>
+                <div className="text-xs text-gray-600">สาเหตุหลัก{topReason ? `: ${topReason.name}` : ''}</div>
               </div>
               <div className="col-span-2 sm:col-span-1">
                 <div className="text-lg font-semibold text-red-600">
-                  {totalDenied.toLocaleString('th-TH')}
+                  {totalDeniedAll.toLocaleString('th-TH')}
                 </div>
                 <div className="text-xs text-gray-600">ปฏิเสธทั้งหมด</div>
               </div>

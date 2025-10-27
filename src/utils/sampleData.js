@@ -181,7 +181,6 @@ export const generateTestData = {
   }
 };
 
-// ตรวจสอบว่าควรใช้ sample data หรือไม่
 export const shouldUseSampleData = () => {
   // ใช้ในโหมด development และไม่มี API URL
   if (process.env.NODE_ENV === 'development' && !process.env.VITE_API_BASE_URL) {

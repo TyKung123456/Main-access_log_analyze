@@ -1,6 +1,6 @@
 // components/Layout/NavigationTabs.jsx
 import React from 'react';
-import { Upload, BarChart3, MessageSquare, Table, FileText, Grid, Activity } from 'lucide-react';
+import { Upload, BarChart3, MessageSquare, Table, FileText, Activity } from 'lucide-react';
 
 const NavigationTabs = ({ activeTab, setActiveTab }) => {
   const tabs = [
@@ -16,12 +16,6 @@ const NavigationTabs = ({ activeTab, setActiveTab }) => {
       icon: BarChart3,
       description: 'ภาพรวม, สถิติ และการวิเคราะห์เชิงลึก'
     },
-    {
-      id: 'pivot',
-      label: 'Pivot (Beta)',
-      icon: Grid,
-      description: 'ตาราง Pivot แบบ Power BI'
-    },
     { 
       id: 'cases', 
       label: 'รายงานเคส', 
@@ -30,9 +24,9 @@ const NavigationTabs = ({ activeTab, setActiveTab }) => {
     },
     { 
       id: 'chat', 
-      label: 'Chat กับ AI', 
+      label: 'สร้างรายงาน AI', 
       icon: MessageSquare,
-      description: 'สอบถามข้อมูลกับ AI'
+      description: 'สร้าง/สรุปรายงานอัตโนมัติจากข้อมูล'
     },
   ];
 

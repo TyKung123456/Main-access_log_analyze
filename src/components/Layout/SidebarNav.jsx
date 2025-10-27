@@ -1,20 +1,46 @@
-import React from 'react';
-import { Upload, BarChart3, MessageSquare, Table, FileText, Grid, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Upload, BarChart3, MessageSquare, Table, FileText, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip.jsx';
 
 const SidebarNav = ({ activeTab, setActiveTab, collapsed = false, onToggle }) => {
   const tabs = [
-    { id: 'logs', label: 'Transaction Log', icon: Table, description: 'Transaction Log แบบตาราง' },
-    { id: 'dashboard', label: 'แดชบอร์ด & วิเคราะห์', icon: BarChart3, description: 'ภาพรวม, สถิติ และการวิเคราะห์เชิงลึก' },
-    { id: 'cases', label: 'รายงานเหตุการณ์ (เคส)', icon: FileText, description: 'รายงานแยกตามเหตุการณ์/เคส พร้อมส่งออก' },
-    { id: 'chat', label: 'สร้างรายงาน (AI)', icon: MessageSquare, description: 'สร้างรายงานสรุปด้วย AI และส่งออก' },
+    { id: 'logs', label: 'Transaction Log', icon: Table, description: 'Transaction Log แบบตาราง', sections: [
+      { id: 'logs-filters', label: 'ตัวกรอง' },
+      { id: 'logs-table', label: 'ตารางรายการ' },
+      { id: 'logs-insights', label: 'Quick Insights' },
+    ] },
+    { id: 'dashboard', label: 'แดชบอร์ด & วิเคราะห์', icon: BarChart3, description: 'ภาพรวม, สถิติ และการวิเคราะห์เชิงลึก', sections: [
+      { id: 'dash-kpi', label: 'สรุป KPI' },
+      { id: 'dash-top', label: 'Top สถานที่/เหตุผล' },
+      { id: 'dash-suspicious', label: 'ผู้ใช้น่าสงสัย' },
+    ] },
+    { id: 'cases', label: 'รายงานเหตุการณ์ (เคส)', icon: FileText, description: 'รายงานแยกตามเหตุการณ์/เคส พร้อมส่งออก', sections: [
+      { id: 'cases-list', label: 'รายการเคส' },
+    ] },
+    { id: 'chat', label: 'สร้างรายงาน (AI)', icon: MessageSquare, description: 'สร้างรายงานสรุปด้วย AI และส่งออก', sections: [
+      { id: 'chat-generate', label: 'สร้างรายงาน' },
+    ] },
   ];
+
+  const [openMap, setOpenMap] = useState({});
+  const [activeSection, setActiveSection] = useState(null); // { tabId, sectionId }
+
+  const toggleOpen = (id) => setOpenMap((m) => ({ ...m, [id]: !m[id] }));
 
   const handleClick = (id) => {
     setActiveTab(id);
     if (typeof window !== 'undefined' && window.gtag) {
       window.gtag('event', 'tab_click', { event_category: 'navigation_sidebar', event_label: id });
     }
+  };
+
+  const handleSectionClick = (tabId, sectionId) => {
+    handleClick(tabId);
+    setActiveSection({ tabId, sectionId });
+    // ส่ง event ให้หน้าเป้าหมายเลือกเลื่อนไปยัง section ได้ถ้ารองรับ
+    try {
+      window.dispatchEvent(new CustomEvent('jumpTo', { detail: { sectionId } }));
+    } catch {}
   };
 
   if (collapsed) {
@@ -30,31 +56,25 @@ const SidebarNav = ({ activeTab, setActiveTab, collapsed = false, onToggle }) =>
               <ChevronRight size={18} />
             </button>
           </div>
-          <TooltipProvider>
-            <ul className="flex-1 p-2 space-y-1">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <li key={tab.id}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => handleClick(tab.id)}
-                          aria-label={tab.label}
-                          className={`w-full h-11 flex items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-                          aria-current={isActive ? 'page' : undefined}
-                        >
-                          <Icon size={18} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">{tab.label}</TooltipContent>
-                    </Tooltip>
-                  </li>
-                );
-              })}
-            </ul>
-          </TooltipProvider>
+          <ul className="flex-1 p-2 space-y-1">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <li key={tab.id}>
+                  <button
+                    onClick={() => handleClick(tab.id)}
+                    aria-label={tab.label}
+                    title={tab.label}
+                    className={`w-full h-11 flex items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    <Icon size={18} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </nav>
       </aside>
     );
@@ -81,24 +101,24 @@ const SidebarNav = ({ activeTab, setActiveTab, collapsed = false, onToggle }) =>
             const isActive = activeTab === tab.id;
             return (
               <li key={tab.id} className="px-2">
-                <button
-                  onClick={() => handleClick(tab.id)}
-                  title={`${tab.label} — ${tab.description}`}
-                  className={`group w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-xl border-l-4 transition-colors ${isActive ? 'bg-sky-50 text-slate-900 border-l-sky-400' : 'bg-white text-gray-800 border-l-transparent hover:bg-gray-50 hover:border-l-sky-200'}`}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  <span className={`mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-md ${isActive ? 'bg-sky-100 text-sky-600' : 'bg-gray-100 text-gray-600'} ring-1 ring-black/5`}>
-                    <Icon size={14} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className={`block ${isActive ? 'font-semibold' : 'font-medium'} truncate whitespace-nowrap`}>{tab.label}
-                      {tab.id === 'pivot' && (
-                        <span className={`ml-2 align-middle text-[10px] px-1.5 py-0.5 rounded ${isActive ? 'bg-sky-100 text-sky-700' : 'bg-gray-100 text-gray-600'}`}>Beta</span>
-                      )}
+                <div className={`group w-full text-left flex flex-col px-3 py-2.5 rounded-xl border-l-4 ${isActive ? 'bg-sky-50 text-slate-900 border-l-sky-400' : 'bg-white text-gray-800 border-l-transparent hover:bg-gray-50 hover:border-l-sky-200'}`}>
+                  <button
+                    onClick={() => handleClick(tab.id)}
+                    title={`${tab.label} — ${tab.description}`}
+                    className="flex items-start gap-3 w-full text-left"
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    <span className={`mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-md ${isActive ? 'bg-sky-100 text-sky-600' : 'bg-gray-100 text-gray-600'} ring-1 ring-black/5`}>
+                      <Icon size={14} />
                     </span>
-                    <span className={`block text-xs ${isActive ? 'text-sky-700/80' : 'text-gray-500'} truncate whitespace-nowrap`}>{tab.description}</span>
-                  </span>
-                </button>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block ${isActive ? 'font-semibold' : 'font-medium'} truncate whitespace-nowrap`}>{tab.label}</span>
+                      <span className={`block text-xs ${isActive ? 'text-sky-700/80' : 'text-gray-500'} truncate whitespace-nowrap`}>{tab.description}</span>
+                    </span>
+                    {/* no subsection chevron */}
+                  </button>
+                  {/* no subsections list */}
+                </div>
               </li>
             );
           })}

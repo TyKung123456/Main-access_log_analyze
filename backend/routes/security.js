@@ -362,26 +362,121 @@ CASE_SQL.security_room_offhours = `
 // List cases
 router.get('/cases/list', async (req, res) => {
   const list = [
-    { id: 'unmatched_out', title: 'OUT ไม่มีคู่ IN ก่อนหน้า', category: 'Access Flow' },
-    { id: 'unmatched_out_counts', title: 'สรุปจำนวน OUT ไม่มีคู่ ต่อคน', category: 'Access Flow' },
-    { id: 'visitor_in_no_employees', title: 'Visitor เข้าตอนไม่มีพนักงานอยู่', category: 'Policy' },
-    { id: 'door_device_location_ambiguity', title: 'Door/Device/Location ผิดปกติ', category: 'Data Quality' },
-    { id: 'denied_without_reason', title: 'ปฏิเสธ (Allow=false) แต่ Reason ว่าง', category: 'Data Quality' },
-    { id: 'allowed_without_permission', title: 'อนุญาต (Allow=true) แต่ Permission ว่าง', category: 'Policy' },
-    { id: 'high_frequency_card', title: 'บัตรถูกใช้ >5 ครั้งใน 10 นาที', category: 'Behavior' },
-    { id: 'permission_multi_usertype', title: 'Permission เดียวกัน ถูกใช้หลาย User Type', category: 'Policy' },
-    { id: 'missing_device_or_location', title: 'ข้อมูล Device/Location ว่าง', category: 'Data Quality' },
-    { id: 'cards_never_allowed', title: 'บัตรที่ไม่เคย Allow เลย', category: 'Access Effectiveness' },
-    { id: 'txid_conflict', title: 'Transaction ID ซ้ำแต่ Allow ต่างกัน', category: 'Integrity' },
-    { id: 'cardname_multi_userhash', title: 'Card Name ซ้ำหลาย User', category: 'Identity' },
-    { id: 'permission_door_never_allowed', title: 'Permission กับ Door ไม่เคย Allow', category: 'Policy' },
-    { id: 'channel_device_conflict', title: 'Channel เดียวกันใช้อุปกรณ์ต่างกันใน 5 นาที', category: 'Integrity' },
-    { id: 'top_failed_doors', title: 'ประตูที่เกิดความผิดพลาดมากที่สุด', category: 'Summary' },
-    { id: 'top_locations_events', title: 'สถานที่ที่มีเหตุการณ์มากที่สุด', category: 'Summary' },
-    { id: 'daily_inout', title: 'จำนวนเข้า–ออก รายวัน', category: 'Summary' },
+    {
+      id: 'unmatched_out',
+      title: 'รายการออกที่ไม่มีรายการเข้าก่อนหน้า',
+      category: 'Access Flow',
+      description: 'ตรวจสอบเหตุการณ์ OUT ที่ไม่พบรายการ IN ก่อนหน้าในช่วงเวลาที่กำหนด อาจบ่งชี้การอ่านบัตรผิดพลาดหรือกระบวนการเข้า–ออกไม่ครบถ้วน'
+    },
+    {
+      id: 'unmatched_out_counts',
+      title: 'สรุปจำนวน OUT ไม่มีคู่ แยกตามบุคคล',
+      category: 'Access Flow',
+      description: 'จัดทำสรุปความถี่ของเหตุการณ์ OUT ที่ไม่มีคู่ IN แยกตามบุคคล เพื่อระบุความเสี่ยงเชิงพฤติกรรมหรือปัญหาการใช้งาน'
+    },
+    {
+      id: 'visitor_in_no_employees',
+      title: 'ผู้มาติดต่อเข้าพื้นที่ในช่วงที่ไม่มีพนักงาน',
+      category: 'Policy',
+      description: 'ระบุเหตุการณ์ที่ผู้มาติดต่อเข้าถึงพื้นที่ในช่วงเวลาที่ไม่มีการลงบันทึกของพนักงาน ซึ่งควรตรวจสอบมาตรการควบคุมและการกำกับดูแล'
+    },
+    {
+      id: 'door_device_location_ambiguity',
+      title: 'ความไม่สอดคล้องของประตู/อุปกรณ์/สถานที่',
+      category: 'Data Quality',
+      description: 'ตรวจพบความไม่สอดคล้องของข้อมูลระหว่างชื่อประตู อุปกรณ์ และสถานที่ อาจสะท้อนถึงคุณภาพข้อมูลหรือการตั้งค่าระบบ'
+    },
+    {
+      id: 'denied_without_reason',
+      title: 'รายการถูกปฏิเสธโดยไม่ระบุเหตุผล',
+      category: 'Data Quality',
+      description: 'เหตุการณ์ที่ผลลัพธ์เป็นปฏิเสธ (Allow=false) แต่ไม่มีข้อมูลเหตุผล (Reason) อาจชี้ถึงการบันทึกเหตุผลไม่ครบถ้วนหรือการกำหนดค่าไม่เหมาะสม'
+    },
+    {
+      id: 'allowed_without_permission',
+      title: 'รายการอนุญาตที่ไม่พบสิทธิ์กำกับ',
+      category: 'Policy',
+      description: 'เหตุการณ์อนุญาต (Allow=true) แต่ไม่มีข้อมูล Permission กำกับ อาจส่งผลต่อการตรวจสอบย้อนกลับและการควบคุมสิทธิ์'
+    },
+    {
+      id: 'high_frequency_card',
+      title: 'การใช้บัตรความถี่สูงในระยะเวลาสั้น',
+      category: 'Behavior',
+      description: 'ตรวจจับการใช้บัตรเกินเกณฑ์ภายใน 10 นาที บ่งชี้ความเสี่ยงการยืมบัตรหรือการทดสอบระบบ'
+    },
+    {
+      id: 'permission_multi_usertype',
+      title: 'สิทธิ์เดียวกันถูกใช้โดยหลายประเภทผู้ใช้',
+      category: 'Policy',
+      description: 'ตรวจพบสิทธิ์ (Permission) ที่ถูกใช้งานโดยหลายกลุ่มผู้ใช้ อาจสะท้อนถึงการกำหนดสิทธิ์กว้างเกินจำเป็น'
+    },
+    {
+      id: 'missing_device_or_location',
+      title: 'ข้อมูลอุปกรณ์หรือสถานที่ว่าง/ไม่ครบถ้วน',
+      category: 'Data Quality',
+      description: 'เหตุการณ์ที่ไม่มีข้อมูลอุปกรณ์ (Device) หรือสถานที่ (Location) ครบถ้วน ส่งผลต่อความถูกต้องของการติดตามและสอบทาน'
+    },
+    {
+      id: 'cards_never_allowed',
+      title: 'บัตรที่ไม่เคยได้รับอนุญาต',
+      category: 'Access Effectiveness',
+      description: 'ระบุบัตรที่ไม่เคยมีเหตุการณ์อนุญาตเลย อาจเกิดจากบัตรผิดพลาด ไม่ได้ใช้งาน หรือสิทธิ์กำหนดไม่ถูกต้อง'
+    },
+    {
+      id: 'txid_conflict',
+      title: 'ความขัดแย้งของรหัสธุรกรรม',
+      category: 'Integrity',
+      description: 'พบรหัสธุรกรรม (Transaction ID) ซ้ำที่มีผลลัพธ์ต่างกัน สื่อถึงปัญหาความถูกต้องของข้อมูลหรือการผสานข้อมูล'
+    },
+    {
+      id: 'cardname_multi_userhash',
+      title: 'ชื่อบัตรเดียวสัมพันธ์กับผู้ใช้หลายราย',
+      category: 'Identity',
+      description: 'ชื่อบัตร (Card Name) เดียวเชื่อมโยงกับผู้ใช้หลายคน อาจชี้ความเสี่ยงการแชร์บัตรหรือข้อมูลบุคคลทับซ้อน'
+    },
+    {
+      id: 'permission_door_never_allowed',
+      title: 'สิทธิ์–ประตูที่ไม่เคยได้รับอนุญาต',
+      category: 'Policy',
+      description: 'คู่สิทธิ์ (Permission) – ประตู (Door) ที่ไม่เคยมีการอนุญาตสำเร็จ อาจสะท้อนการกำหนดสิทธิ์ไม่เหมาะสม'
+    },
+    {
+      id: 'channel_device_conflict',
+      title: 'ความไม่สอดคล้องของช่องทางและอุปกรณ์',
+      category: 'Integrity',
+      description: 'เหตุการณ์ที่ใช้ Channel เดียวกันแต่ต่างอุปกรณ์ภายในช่วงเวลาใกล้เคียง (เช่น 5 นาที) ส่อถึงความผิดปกติของอุปกรณ์หรือข้อมูลซ้ำซ้อน'
+    },
+    {
+      id: 'top_failed_doors',
+      title: 'ประตูที่มีการปฏิเสธสูงสุด',
+      category: 'Summary',
+      description: 'จัดอันดับประตูตามจำนวนเหตุการณ์ที่ถูกปฏิเสธ เพื่อใช้กำหนดลำดับความสำคัญในการแก้ไขและปรับปรุง'
+    },
+    {
+      id: 'top_locations_events',
+      title: 'สถานที่ที่มีปริมาณเหตุการณ์สูงสุด',
+      category: 'Summary',
+      description: 'จัดอันดับสถานที่ตามจำนวนเหตุการณ์ทั้งหมด เพื่อระบุพื้นที่ที่ต้องให้ความสำคัญในการเฝ้าระวัง'
+    },
+    {
+      id: 'daily_inout',
+      title: 'สรุปจำนวนการเข้า–ออกรายวัน',
+      category: 'Summary',
+      description: 'แสดงแนวโน้มปริมาณเหตุการณ์เข้า–ออกในแต่ละวัน เพื่อประกอบการวางแผนกำลังและการเฝ้าระวัง'
+    },
     // New: Security Room related
-    { id: 'security_room_events', title: 'เหตุการณ์ในห้อง Security', category: 'Security Room' },
-    { id: 'security_room_offhours', title: 'ห้อง Security: เข้านอกเวลาทำการ', category: 'Security Room' },
+    {
+      id: 'security_room_events',
+      title: 'เหตุการณ์การเข้าถึงห้องควบคุมความปลอดภัย',
+      category: 'Security Room',
+      description: 'รายการเหตุการณ์เข้า–ออกภายในศูนย์/ห้องควบคุมความปลอดภัย เพื่อการติดตามและตรวจสอบย้อนหลัง'
+    },
+    {
+      id: 'security_room_offhours',
+      title: 'การเข้าถึงห้องควบคุมความปลอดภัยนอกเวลาทำการ',
+      category: 'Security Room',
+      description: 'ระบุเหตุการณ์เข้าห้องควบคุมความปลอดภัยนอกเวลาทำการ (เช่น 22:00–06:00 หรือวันหยุด) โดยแยกกรณีที่ไม่ใช่เจ้าหน้าที่รักษาความปลอดภัย'
+    },
   ];
   res.json({ cases: list });
 });

@@ -20,6 +20,8 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import DeniedReasonsChart from '../components/Analytics/Charts/DeniedReasonsChart.jsx';
+import HourlyTrendChart from '../components/Dashboard/Charts/HourlyTrendChart.jsx';
+import LocationDistributionChart from '../components/Dashboard/Charts/LocationDistributionChart.jsx';
 import { computeSuspicionByUser, computeSuspicionAll } from '../utils/suspicionScore';
 import apiService from '../services/apiService.js';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card.jsx';
@@ -70,6 +72,11 @@ const CombinedDashboardAnalyticsPage = ({
   const [logsFilter, setLogsFilter] = useState(null); // { type: 'location'|'reason', value: string }
   const [alertsOpen, setAlertsOpen] = useState(false);
   const alertsRef = useRef(null);
+  // Dashboard filter controls: year + locations
+  const [dashYear, setDashYear] = useState('all');
+  const [locOptions, setLocOptions] = useState([]);
+  const [locQuery, setLocQuery] = useState('');
+  const [locOpen, setLocOpen] = useState(false);
 
   useEffect(() => {
     const onClick = (e) => {
@@ -79,6 +86,30 @@ const CombinedDashboardAnalyticsPage = ({
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [alertsOpen]);
+
+  // Fetch location options for dashboard filter (faceted by current filters except location)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const base = { ...(filters || {}) };
+        const params = {}; // only use API-level filters via transform inside apiService endpoints
+        // Use apiService facet endpoint; if it fails, fallback to unique from logData
+        const res = await apiService.getLocations(params).catch(() => ({ locations: [] }));
+        if (!mounted) return;
+        const list = (res.locations || []).map(i => ({ value: i.value || i.label, label: i.label || i.value }));
+        if (list.length > 0) setLocOptions(list);
+        else {
+          const uniq = Array.from(new Set((logData || []).map(l => (l.location || l.door)).filter(Boolean))).sort();
+          setLocOptions(uniq.map(v => ({ value: v, label: v })));
+        }
+      } catch {
+        const uniq = Array.from(new Set((logData || []).map(l => (l.location || l.door)).filter(Boolean))).sort();
+        setLocOptions(uniq.map(v => ({ value: v, label: v })));
+      }
+    })();
+    return () => { mounted = false; };
+  }, [JSON.stringify(filters), logData]);
 
   const headerComputed = useMemo(() => {
     let last = null; let total = 0; let denied = 0;
@@ -127,6 +158,18 @@ const CombinedDashboardAnalyticsPage = ({
     return { last, alerts, risk, list };
   }, [logData]);
 
+  const singleDayInfo = useMemo(() => {
+    let minD = null, maxD = null;
+    (logData || []).forEach(l => {
+      const dt = l.dateTime ? new Date(l.dateTime) : (l.accessTime ? new Date(l.accessTime) : null);
+      if (!dt || isNaN(dt)) return;
+      if (!minD || dt < minD) minD = dt;
+      if (!maxD || dt > maxD) maxD = dt;
+    });
+    const sameDay = !!(minD && maxD && minD.toDateString() === maxD.toDateString());
+    return { sameDay, day: sameDay && minD ? minD : null };
+  }, [logData]);
+
 
   const scrollToSection = (id) => {
     if (typeof document === 'undefined') return;
@@ -137,6 +180,56 @@ const CombinedDashboardAnalyticsPage = ({
   const [isLoadingSecurityMetrics, setIsLoadingSecurityMetrics] = useState(true);
   const [selectedSecurityKPI, setSelectedSecurityKPI] = useState('all');
   const [alertDetail, setAlertDetail] = useState(null);
+
+  // Support in-page jump and spotlight (e.g., 'dash-kpi')
+  useEffect(() => {
+    const onJump = (e) => {
+      const id = e?.detail?.sectionId;
+      if (!id || !String(id).startsWith('dash-')) return;
+      try {
+        // Specific KPI focus e.g. dash-kpi-total, dash-kpi-unique, ...
+        if (id.startsWith('dash-kpi-')) {
+          const key = id.replace('dash-kpi-', '');
+          const card = document.getElementById(`kpi-${key}`);
+          if (card) {
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // pop the card
+            card.classList.remove('jump-pop');
+            void card.offsetWidth;
+            card.classList.add('jump-pop');
+            // bounce the number
+            const val = card.querySelector('.kpi-value');
+            if (val) {
+              val.classList.remove('kpi-bounce');
+              void val.offsetWidth;
+              val.classList.add('kpi-bounce');
+              setTimeout(() => val.classList.remove('kpi-bounce'), 1000);
+            }
+            setTimeout(() => card.classList.remove('jump-pop'), 1200);
+          }
+          return;
+        }
+
+        // General KPI section spotlight
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('jump-pop');
+        void el.offsetWidth; // force reflow to retrigger
+        el.classList.add('jump-pop');
+        // also bounce numbers inside
+        el.querySelectorAll('.kpi-value').forEach((v) => {
+          v.classList.remove('kpi-bounce');
+          void v.offsetWidth;
+          v.classList.add('kpi-bounce');
+          setTimeout(() => v.classList.remove('kpi-bounce'), 1000);
+        });
+        setTimeout(() => el.classList.remove('jump-pop'), 1200);
+      } catch {}
+    };
+    window.addEventListener('jumpTo', onJump);
+    return () => window.removeEventListener('jumpTo', onJump);
+  }, []);
 
 
   // Filtered data for RecentAccessTable based on selectedSecurityKPI
@@ -827,68 +920,140 @@ const CombinedDashboardAnalyticsPage = ({
 
     return (
       <div className="space-y-4 max-w-7xl mx-auto w-full">
+        {/* Dashboard Filters: Year + Location */}
+        <div className="bg-white rounded-xl border shadow-sm p-3 flex flex-wrap items-end gap-3">
+          <div>
+            <div className="text-xs text-gray-600 mb-1">ปี</div>
+            <select
+              className="border rounded-md px-2 py-1 text-sm"
+              value={dashYear}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDashYear(v);
+                if (v === 'all') {
+                  updateFilter?.('dateRange', undefined);
+                } else {
+                  const y = parseInt(v, 10);
+                  if (!isNaN(y)) {
+                    const start = new Date(y, 0, 1).toISOString();
+                    const end = new Date(y, 11, 31, 23, 59, 59, 999).toISOString();
+                    updateFilter?.('dateRange', { start, end });
+                  }
+                }
+              }}
+            >
+              {(() => {
+                const now = new Date().getFullYear();
+                const items = [<option key="all" value="all">ทั้งหมด</option>];
+                for (let y = now; y >= now - 6; y--) items.push(<option key={y} value={y}>{y}</option>);
+                return items;
+              })()}
+            </select>
+          </div>
+          <div className="relative">
+            <div className="text-xs text-gray-600 mb-1">สถานที่</div>
+            <button
+              className="border rounded-md px-2 py-1 text-sm bg-white hover:bg-gray-50 min-w-[12rem] flex items-center justify-between"
+              onClick={() => setLocOpen(v => !v)}
+            >
+              <span className="truncate text-left">
+                {Array.isArray(filters?.location) && filters.location.length > 0
+                  ? `เลือกแล้ว ${filters.location.length} แห่ง`
+                  : 'ทั้งหมด'}
+              </span>
+              <ChevronDown className="w-4 h-4 text-gray-500" />
+            </button>
+            {locOpen && (
+              <div className="absolute z-20 mt-1 w-72 bg-white border rounded-md shadow-lg p-2">
+                <div className="relative mb-2">
+                  <input
+                    className="w-full border rounded px-2 py-1 text-sm"
+                    placeholder="ค้นหา..."
+                    value={locQuery}
+                    onChange={(e)=>setLocQuery(e.target.value)}
+                  />
+                </div>
+                <div className="max-h-56 overflow-auto space-y-1">
+                  {locOptions.filter(o => (o.label||'').toLowerCase().includes(locQuery.toLowerCase())).map(o => {
+                    const checked = Array.isArray(filters?.location) ? filters.location.includes(o.value) : false;
+                    return (
+                      <label key={o.value} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="accent-blue-600"
+                          checked={checked}
+                          onChange={(e) => {
+                            const cur = Array.isArray(filters?.location) ? [...filters.location] : [];
+                            const next = e.target.checked ? [...new Set([...cur, o.value])] : cur.filter(v => v !== o.value);
+                            updateFilter?.('location', next);
+                          }}
+                        />
+                        <span className="text-sm text-gray-800 truncate" title={o.label}>{o.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className="flex items-center justify-end gap-2 mt-2">
+                  <button className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50" onClick={()=>updateFilter?.('location', [])}>ล้าง</button>
+                  <button className="text-xs px-2 py-1 rounded border bg-white hover:bg-gray-50" onClick={()=>setLocOpen(false)}>ปิด</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
         {/* Snapshot banner removed per request (duplicate section) */}
 
         {/* Essential KPIs only (not real-time heavy) */}
-        <EssentialStatsCards stats={stats || {}} logData={logData} />
-
-        {/* Row 2: Top Events (left) + Timeline (right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <TopEventsBarChart
-            logData={logData}
-            onSelect={() => { try { const el=document.getElementById('logs-focus'); if (el) el.scrollIntoView({behavior:'smooth'}); } catch {} }}
-          />
-          <TimelineDenied7d
-            logData={logData}
-            onSelect={(dayLabel)=>{ try { const el=document.getElementById('logs-focus'); if (el) el.scrollIntoView({behavior:'smooth'}); } catch {} }}
-          />
+        <div id="dash-kpi" className="rounded-xl">
+          <EssentialStatsCards stats={stats || {}} logData={logData} />
         </div>
 
-        {/* Row 3: Denied Reasons (left) + Suspicious Users (right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <DeniedReasonsChart data={logData} loading={loading} />
-          <SuspiciousUsersCard
-            topListType={topListType}
-            setTopListType={setTopListType}
-            showAllSuspects={showAllSuspects}
-            setShowAllSuspects={setShowAllSuspects}
-            suspiciousUsers={suspiciousUsers}
-            topLists={topLists}
-            onExplainUser={async (u) => { await explainUser(u.userKey || u.user, u.lastTime); }}
-            loading={loadingTopSuspicious}
-          />
+        {/* รวมกราฟพื้นฐาน (ย้ายจากหน้า Log) */}
+        <div id="dash-overview-charts" className="grid grid-cols-1 lg:grid-cols-3 gap-3 rounded-xl">
+          <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-gray-900">กราฟรวม</h3>
+            </div>
+            <div className="space-y-3">
+              <HourlyTrendChart data={safeChartData.hourlyData} loading={loading} />
+              <LocationDistributionChart data={safeChartData.locationData} loading={loading} />
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border shadow-sm p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-gray-900">Top สถานที่</h3>
+              <div className="text-xs text-gray-600 flex items-center gap-2">
+                <span>แสดง</span>
+                <input id="top-loc-limit" type="number" min={1} max={50} defaultValue={10} className="w-14 px-1.5 py-1 border rounded" onChange={(e)=>{
+                  const v = Math.max(1, Math.min(50, parseInt(e.target.value)||10));
+                  const listEl = document.getElementById('top-loc-list'); if (!listEl) return;
+                  Array.from(listEl.children).forEach((li, idx) => { li.style.display = idx < v ? '' : 'none'; });
+                }} />
+                <span>แห่ง</span>
+              </div>
+            </div>
+            <ul id="top-loc-list" className="divide-y">
+              {(() => {
+                const items = (safeChartData.locationData || [])
+                  .map(i => ({ name: i.location || i.locationDisplay || '', count: parseInt(i.count)||0, denied: parseInt(i.denied)||parseInt(i.deniedAccess)||0 }))
+                  .filter(i=>i.name)
+                  .sort((a,b)=>b.count-a.count)
+                  .slice(0, 10);
+                if (items.length === 0) return (<li className="py-3 text-sm text-gray-500">ไม่มีข้อมูล</li>);
+                return items.map((l, idx) => (
+                  <li key={idx} className="py-2 text-sm flex justify-between items-center">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 truncate">{idx+1}. {l.name}</div>
+                      <div className="text-xs text-gray-600 truncate">รวม {l.count.toLocaleString('th-TH')} ครั้ง • ปฏิเสธ {l.denied.toLocaleString('th-TH')}</div>
+                    </div>
+                  </li>
+                ));
+              })()}
+            </ul>
+          </div>
         </div>
 
-
-        {/* Review table removed per request */}
-
-        {/* Suspicious users moved above Top Events (to avoid duplication) */}
-
-        {/* (Optional) Logs filtered by selection */}
-        {logsFilter && (
-          <CollapsibleCard
-            title={`ตาราง Log — ${logsFilter.type === 'location' ? 'สถานที่' : 'เหตุผล'}: ${logsFilter.value}`}
-            actions={<button className="text-xs text-gray-600 hover:text-gray-900" onClick={()=>setLogsFilter(null)}>ล้างตัวกรอง</button>}
-          >
-            {(() => {
-              const rows = (logData || []).filter(l => {
-                if (logsFilter.type === 'location') {
-                  const loc = clean(l.location || l.door);
-                  return loc === logsFilter.value;
-                } else if (logsFilter.type === 'reason') {
-                  const rs = clean(l.reason);
-                  return rs === logsFilter.value;
-                }
-                return false;
-              });
-              return (
-                <div className="text-sm text-gray-600">ตาราง Log ถูกปิดใช้งานตามคำขอ</div>
-              );
-            })()}
-          </CollapsibleCard>
-        )}
-
-        {/* Incident Feed removed per request */}
+        {/* เนื้อหาเชิงวิเคราะห์ถูกย้ายไปยังแท็บ "การวิเคราะห์" */}
 
         {suspectDetail && (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setSuspectDetail(null)}>
@@ -1044,20 +1209,265 @@ const CombinedDashboardAnalyticsPage = ({
             </div>
           </div>
         )}
+
+        
       </div>
     );
   };
 
   // analytics view merged into overview
 
-  const renderSecurity = () => null;
+  // Analysis tab content: conditional/derived insights
+  const renderAnalysis = () => {
+    // Build local lists defensively to avoid TDZ/undefined refs
+    const localSuspiciousUsers = (() => {
+      try {
+        const base = Array.isArray(topSuspicious) ? topSuspicious : [];
+        return [...base].sort((a, b) => {
+          const sa = Number(a?.score || 0), sb = Number(b?.score || 0);
+          if (sb !== sa) return sb - sa;
+          const da = Number(a?.counts?.denied || 0), db = Number(b?.counts?.denied || 0);
+          return db - da;
+        });
+      } catch { return []; }
+    })();
 
-  // Removed separate Recent/Pivot views to simplify
+    const localTopLists = (() => {
+      try {
+        const offenders = { ACCESS_DENIED: new Map(), UNUSUAL_TIME: new Map(), MULTIPLE_ATTEMPTS: new Map() };
+        const byUserLocDenied = new Map();
+        (logData || []).forEach(log => {
+          const user = clean(log.cardName || log.cardNumber);
+          const loc = clean(log.location || log.door);
+          if (isEmptyish(user)) return;
+          const allow = (log.allow === true || log.allow === 1);
+          const dt = log.dateTime ? new Date(log.dateTime) : null;
+          if (!allow) {
+            offenders.ACCESS_DENIED.set(user, (offenders.ACCESS_DENIED.get(user) || 0) + 1);
+            if (!isEmptyish(loc)) {
+              const key = `${user}|${loc}`;
+              byUserLocDenied.set(key, (byUserLocDenied.get(key) || 0) + 1);
+            }
+          } else if (dt && !isNaN(dt)) {
+            const h = dt.getHours(); const d = dt.getDay();
+            const off = (h >= 22 || h <= 6) || (d === 0 || d === 6);
+            const isSecurity = (String(log.userType||'').toUpperCase() === 'SECURITY');
+            if (off && !isSecurity) offenders.UNUSUAL_TIME.set(user, (offenders.UNUSUAL_TIME.get(user) || 0) + 1);
+          }
+        });
+        for (const [key, c] of byUserLocDenied.entries()) {
+          if (c >= 3) {
+            const user = key.split('|')[0];
+            offenders.MULTIPLE_ATTEMPTS.set(user, (offenders.MULTIPLE_ATTEMPTS.get(user) || 0) + 1);
+          }
+        }
+        const toTop = (m) => Array.from(m.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+        return {
+          suspicious: localSuspiciousUsers.map(u => [u.user, u.score]),
+          denied: toTop(offenders.ACCESS_DENIED),
+          off_hours: toTop(offenders.UNUSUAL_TIME),
+          multiple_attempts: toTop(offenders.MULTIPLE_ATTEMPTS),
+        };
+      } catch { return { suspicious: [], denied: [], off_hours: [], multiple_attempts: [] }; }
+    })();
+
+    return (
+      <div className="space-y-4 max-w-7xl mx-auto w-full">
+        {/* Top Events + Denied 7d Timeline */}
+        <div id="dash-top" className="grid grid-cols-1 lg:grid-cols-2 gap-3 rounded-xl">
+          <TopEventsBarChart
+            logData={logData}
+            onSelect={() => { try { const el=document.getElementById('logs-focus'); if (el) el.scrollIntoView({behavior:'smooth'}); } catch {} }}
+          />
+          <TimelineDenied7d
+            logData={logData}
+            onSelect={(dayLabel)=>{ try { const el=document.getElementById('logs-focus'); if (el) el.scrollIntoView({behavior:'smooth'}); } catch {} }}
+          />
+        </div>
+
+        {/* Denied reasons + Suspicious users */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <DeniedReasonsChart data={logData} loading={loading} />
+          <div id="dash-suspicious" className="rounded-xl">
+            <SuspiciousUsersCard
+              topListType={topListType}
+              setTopListType={setTopListType}
+              showAllSuspects={showAllSuspects}
+              setShowAllSuspects={setShowAllSuspects}
+              suspiciousUsers={localSuspiciousUsers}
+              topLists={localTopLists}
+              onExplainUser={async (u) => { await explainUser(u.userKey || u.user, u.lastTime); }}
+              loading={loadingTopSuspicious}
+            />
+          </div>
+        </div>
+
+        {/* (Optional) Logs filtered by selection */}
+        {logsFilter && (
+          <CollapsibleCard
+            title={`ตาราง Log — ${logsFilter.type === 'location' ? 'สถานที่' : 'เหตุผล'}: ${logsFilter.value}`}
+            actions={<button className="text-xs text-gray-600 hover:text-gray-900" onClick={()=>setLogsFilter(null)}>ล้างตัวกรอง</button>}
+          >
+            {(() => {
+              const rows = (logData || []).filter(l => {
+                if (logsFilter.type === 'location') {
+                  const loc = clean(l.location || l.door);
+                  return loc === logsFilter.value;
+                } else if (logsFilter.type === 'reason') {
+                  const rs = clean(l.reason);
+                  return rs === logsFilter.value;
+                }
+                return false;
+              });
+              return (
+                <div className="text-sm text-gray-600">ตาราง Log ถูกปิดใช้งานตามคำขอ</div>
+              );
+            })()}
+          </CollapsibleCard>
+        )}
+
+        {/* Modals (duplicated here for analysis tab) */}
+        {suspectDetail && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setSuspectDetail(null)}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={(e)=>e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="font-semibold text-gray-900">สาเหตุคะแนนความสงสัย — {suspectDetail.user}</h3>
+                <button className="text-gray-500 hover:text-gray-700" onClick={()=>setSuspectDetail(null)}>ปิด</button>
+              </div>
+              <div className="p-4 space-y-3">
+                {suspectDetail.loading ? (
+                  <div className="text-sm text-gray-600">กำลังโหลด...</div>
+                ) : suspectDetail.error ? (
+                  <div className="text-sm text-red-600">{suspectDetail.error}</div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-gray-600">คะแนนรวม (ปฏิเสธ%)</div>
+                      <div className="text-xl font-bold text-blue-600">{suspectDetail.score}%</div>
+                    </div>
+                    <div className="text-sm text-gray-700">รายละเอียดปัจจัย</div>
+                    <ul className="divide-y rounded border">
+                      {(suspectDetail.breakdown || []).map((b, i) => (
+                        <li key={i} className="px-3 py-2 text-sm flex items-center justify-between">
+                          <div>
+                            <div className="font-medium text-gray-900">{b.label} × {b.value}%</div>
+                            <div className="text-gray-500 text-xs">{b.detail}</div>
+                          </div>
+                          <div className="text-blue-600 font-semibold">{b.value}%</div>
+                        </li>
+                      ))}
+                      {(!suspectDetail.breakdown || suspectDetail.breakdown.length === 0) && (
+                        <li className="px-3 py-2 text-sm text-gray-500">ไม่มีปัจจัยที่เพิ่มคะแนน</li>
+                      )}
+                    </ul>
+                    <div className="text-xs text-gray-600">
+                      สรุป: รวม {suspectDetail.counts?.total || 0} ครั้ง • ปฏิเสธ {suspectDetail.counts?.denied || 0} • นอกเวลา {suspectDetail.counts?.offHours || 0} • วันหยุด {suspectDetail.counts?.weekend || 0} • สถานที่ {suspectDetail.counts?.uniqueLocations || 0}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="px-4 py-3 border-t bg-gray-50 flex justify-end">
+                <button className="px-4 py-2 rounded-md border bg-white hover:bg-gray-100" onClick={()=>setSuspectDetail(null)}>ปิด</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {alertDetail && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setAlertDetail(null)}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={(e)=>e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="font-semibold text-gray-900">รายละเอียดแจ้งเตือน</h3>
+                <button className="text-gray-500 hover:text-gray-700" onClick={()=>setAlertDetail(null)}>ปิด</button>
+              </div>
+              <div className="p-4 space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium text-gray-900">{alertDetail.who || 'Unknown'}</div>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${alertDetail.risk==='high'?'bg-red-100 text-red-700':alertDetail.risk==='medium'?'bg-yellow-100 text-yellow-700':'bg-emerald-100 text-emerald-700'}`}>{alertDetail.risk==='high'?'สูง':alertDetail.risk==='medium'?'ปานกลาง':'ต่ำ'}</span>
+                </div>
+                {alertDetail.description && (
+                  <div className="text-gray-700">{alertDetail.description}</div>
+                )}
+                <div className="text-gray-600 space-y-1">
+                  {alertDetail.location && (<div className="flex items-center gap-2"><MapPin className="w-4 h-4"/>{alertDetail.location}</div>)}
+                  {alertDetail.time && (<div className="flex items-center gap-2"><Clock className="w-4 h-4"/>{new Date(alertDetail.time).toLocaleString('th-TH')}</div>)}
+                </div>
+              </div>
+              <div className="px-4 py-3 border-t bg-gray-50 flex justify-end gap-2">
+                {alertDetail.who && (
+                  <button className="px-3 py-1.5 rounded-md border bg-white hover:bg-gray-100 text-sm" onClick={()=>{ explainUser(alertDetail.who); setAlertDetail(null); }}>ดูผู้ใช้นี้</button>
+                )}
+                {alertDetail.location && (
+                  <button className="px-3 py-1.5 rounded-md border bg-white hover:bg-gray-100 text-sm" onClick={()=>{ setLocDetail({ name: alertDetail.location }); setAlertDetail(null); }}>ดูสถานที่นี้</button>
+                )}
+                <button className="px-3 py-1.5 rounded-md border bg-white hover:bg-gray-100 text-sm" onClick={()=>setAlertDetail(null)}>ปิด</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {locDetail && (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setLocDetail(null)}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={(e)=>e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="font-semibold text-gray-900">รายละเอียดสถานที่ — {locDetail.name}</h3>
+                <button className="text-gray-500 hover:text-gray-700" onClick={()=>setLocDetail(null)}>ปิด</button>
+              </div>
+              <div className="p-4 space-y-3">
+                {(() => {
+                  const items = (logData || []).filter(x => (x.location || x.door) === locDetail.name);
+                  const total = items.length;
+                  let denied = 0, offHours = 0, weekend = 0; const users = new Set(); const reasons = new Map(); let lastTime = null;
+                  for (const it of items) {
+                    if (it.allow === false || it.status === 'denied') denied++;
+                    const dt = it.dateTime ? new Date(it.dateTime) : null; if (dt && !isNaN(dt)) {
+                      const h = dt.getHours(); const d = dt.getDay(); if (h >= 22 || h <= 6) offHours++; if (d===0||d===6) weekend++; if (!lastTime || dt>lastTime) lastTime = dt;
+                    }
+                    const usr = clean(it.cardName || it.cardNumber);
+                    if (!isEmptyish(usr)) users.add(usr);
+                    const rs = (it.reason ?? '').toString().trim();
+                    if (rs) reasons.set(rs, (reasons.get(rs) || 0) + 1);
+                  }
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 text-center">
+                        <div>
+                          <div className="text-lg font-semibold text-gray-900">{total.toLocaleString('th-TH')}</div>
+                          <div className="text-xs text-gray-600">รวมทั้งหมด</div>
+                        </div>
+                        <div>
+                          <div className="text-lg font-semibold text-red-600">{denied.toLocaleString('th-TH')}</div>
+                          <div className="text-xs text-gray-600">ปฏิเสธ</div>
+                        </div>
+                      </div>
+                      {reasons.size>0 && (
+                        <div className="text-sm text-gray-700">
+                          สาเหตุยอดฮิต:
+                          <ul className="list-disc pl-5 mt-1 text-xs text-gray-600">
+                            {Array.from(reasons.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([reason, cnt], idx) => (
+                              <li key={idx}>{reason} — {cnt.toLocaleString('th-TH')} ครั้ง</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="px-4 py-3 border-t bg-gray-50 flex justify-end">
+                <button className="px-4 py-2 rounded-md border bg-white hover:bg-gray-100" onClick={()=>setLocDetail(null)}>ปิด</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderContent = () => {
     switch (activeView) {
       case 'overview':
         return renderOverview();
+      case 'analysis':
+        return renderAnalysis();
       default:
         return renderOverview();
     }
@@ -1086,11 +1496,9 @@ const CombinedDashboardAnalyticsPage = ({
           <div>
             <h1 className="text-2xl font-semibold text-gray-900 flex items-center">
               <LayoutDashboard className="mr-3 h-6 w-6 text-blue-600" />
-              แดชบอร์ด & การวิเคราะห์
+              ภาพรวมข้อมูล & วิเคราะห์
             </h1>
-            <p className="text-gray-600 mt-1 text-sm">
-              ภาพรวม, สถิติ และการวิเคราะห์เชิงลึกของข้อมูลการเข้าถึง
-            </p>
+            <p className="text-gray-600 mt-1 text-sm">ภาพรวม, สถิติ และการวิเคราะห์เชิงลึกของข้อมูลการเข้าถึง</p>
           </div>
           {(() => (
             <div className="flex flex-wrap items-center gap-3 text-sm" ref={alertsRef}>
@@ -1145,14 +1553,36 @@ const CombinedDashboardAnalyticsPage = ({
                 )}
               </div>
 
-              <span className="hidden sm:inline text-gray-700 px-3 py-1.5 rounded-full border bg-white/80 backdrop-blur-sm shadow-sm">อัปเดตล่าสุด: {headerComputed.last ? headerComputed.last.toLocaleString('th-TH') : '-'}</span>
+              <span className="hidden sm:inline text-gray-700 px-3 py-1.5 rounded-full border bg-white/80 backdrop-blur-sm shadow-sm">
+                {singleDayInfo.sameDay && singleDayInfo.day
+                  ? `ข้อมูลเพียงวันที่: ${singleDayInfo.day.toLocaleDateString('th-TH')}`
+                  : `อัปเดตล่าสุด: ${headerComputed.last ? headerComputed.last.toLocaleString('th-TH') : '-'}`}
+              </span>
             </div>
           ))()}
         </div>
         {/* Snapshot banner removed per request */}
       </header>
 
-      {/* Navigation removed for compact layout */}
+      {/* Tabs: Overview vs Analysis */}
+      <div className="max-w-7xl mx-auto w-full">
+        <div role="tablist" aria-label="มุมมอง" className="inline-flex gap-2">
+          <button
+            id="tab-overview"
+            role="tab"
+            aria-selected={activeView==='overview'}
+            className={`px-3 py-1.5 rounded-md text-sm border ${activeView==='overview' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+            onClick={()=>setActiveView('overview')}
+          >ภาพรวมข้อมูล</button>
+          <button
+            id="tab-analysis"
+            role="tab"
+            aria-selected={activeView==='analysis'}
+            className={`px-3 py-1.5 rounded-md text-sm border ${activeView==='analysis' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+            onClick={()=>setActiveView('analysis')}
+          >การวิเคราะห์</button>
+        </div>
+      </div>
 
       {/* Main Content */}
       <main role="tabpanel" aria-labelledby={`tab-${activeView}`} className="max-w-7xl mx-auto w-full mt-3">

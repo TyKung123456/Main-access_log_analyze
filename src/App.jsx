@@ -13,6 +13,8 @@ import { useFilters } from './hooks/useFilters.js';
 import { useUpload } from './hooks/useUpload.js';
 import LogDetailModal from './components/Dashboard/LogDetailModal.jsx';
 import { AlertCircle, CheckCircle, X, RefreshCw, ChevronRight } from 'lucide-react';
+import GuidedTour from './components/Onboarding/GuidedTour.jsx';
+import StepProgress from './components/Onboarding/StepProgress.jsx';
 
 const AccessLogAnalyzer = () => {
   // Default landing tab: go to Transaction Log instead of Dashboard
@@ -28,6 +30,7 @@ const AccessLogAnalyzer = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [showTour, setShowTour] = useState(false);
 
   // Custom hooks
   const { logData, filteredData, stats, chartData, refreshData } = useLogData();
@@ -90,6 +93,14 @@ const AccessLogAnalyzer = () => {
     checkSystemHealth();
   }, []);
 
+  // Show tour on first visit
+  useEffect(() => {
+    try {
+      const seen = localStorage.getItem('ala_seen_tour');
+      if (!seen) setShowTour(true);
+    } catch {}
+  }, []);
+
   // Upload success handler
   useEffect(() => {
     if (uploadResult?.success) {
@@ -111,6 +122,11 @@ const AccessLogAnalyzer = () => {
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
     clearError();
+  };
+
+  const closeTour = () => {
+    setShowTour(false);
+    try { localStorage.setItem('ala_seen_tour', '1'); } catch {}
   };
 
   // Allow children to request tab changes (from GoAccess page etc.)
@@ -146,6 +162,35 @@ const AccessLogAnalyzer = () => {
     };
     return map[activeTab] || { title: '', subtitle: '' };
   };
+
+  const hasData = (logData?.length || 0) > 0;
+  const stepList = [
+    {
+      id: 'upload',
+      title: 'อัปโหลดไฟล์ข้อมูล',
+      subtitle: isUploading ? `กำลังอัปโหลด… ${uploadProgress}%` : (hasData ? 'เสร็จสิ้น' : 'อัปโหลดไฟล์เพื่อเริ่ม'),
+      status: isUploading ? 'in_progress' : (hasData ? 'completed' : (activeTab === 'upload' ? 'in_progress' : 'pending'))
+    },
+    {
+      id: 'logs',
+      title: 'ตรวจสอบ Transaction Log',
+      subtitle: activeTab === 'logs' ? 'กำลังตรวจสอบ' : (hasData ? 'พร้อมค้นหา/กรอง' : 'รอดำเนินการ'),
+      status: activeTab === 'logs' ? 'in_progress' : (activeTab !== 'upload' && hasData ? 'completed' : 'pending')
+    },
+    {
+      id: 'dashboard',
+      title: 'วิเคราะห์บนแดชบอร์ด',
+      subtitle: activeTab === 'dashboard' ? 'กำลังวิเคราะห์' : (hasData ? 'พร้อมดูสถิติ' : 'รอดำเนินการ'),
+      status: activeTab === 'dashboard' ? 'in_progress' : (activeTab === 'chat' ? 'completed' : 'pending')
+    },
+    {
+      id: 'chat',
+      title: 'สร้างรายงานด้วย AI',
+      subtitle: activeTab === 'chat' ? 'กำลังสร้างรายงาน' : (hasData ? 'พร้อมใช้งาน' : 'รอดำเนินการ'),
+      status: activeTab === 'chat' ? 'in_progress' : 'pending'
+    }
+  ];
+  const stepIndex = Math.max(0, stepList.findIndex(s => s.id === activeTab));
   // Close Upload modal on ESC
   useEffect(() => {
     if (!showUploadModal) return;
@@ -360,6 +405,12 @@ const AccessLogAnalyzer = () => {
             <div className="mb-4 flex items-center justify-end">
               <SystemStatus />
             </div>
+            {/* Step progress card */}
+            {!focusMode && (
+              <div className="mb-6">
+                <StepProgress steps={stepList} current={stepIndex} onStepClick={handleTabChange} />
+              </div>
+            )}
             <main>
               {renderContent()}
             </main>
@@ -416,6 +467,11 @@ const AccessLogAnalyzer = () => {
         </div>
       )}
 
+      {/* Guided Tour Overlay */}
+      <GuidedTour isOpen={showTour} onClose={closeTour} goToTab={handleTabChange} />
+
+      {/* Help button removed per request */}
+
       <footer className="bg-white border-t border-gray-200 mt-8">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between text-sm text-gray-500">
@@ -439,7 +495,7 @@ const AccessLogAnalyzer = () => {
       </footer>
     </div>
   );
-}; 
+};
 
 // Simplified Error Boundary
 class ErrorBoundary extends React.Component {
@@ -495,6 +551,8 @@ class ErrorBoundary extends React.Component {
 const App = () => (
   <ErrorBoundary>
     <AccessLogAnalyzer />
+    {/* Global Guided Tour overlay */}
+    {/* Placed here so it is above the main app but below error boundary */}
   </ErrorBoundary>
 );
 

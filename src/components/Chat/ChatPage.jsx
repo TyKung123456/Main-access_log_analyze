@@ -247,6 +247,25 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
   const editorRef = useRef(null);
   const previewHtml = useMemo(() => convertMarkdownToHtml(reportContent, showCharts, chartData), [reportContent, showCharts, chartData]);
 
+  // In-page jump support: chat-generate, chat-history
+  React.useEffect(() => {
+    const onJump = (e) => {
+      const id = e?.detail?.sectionId;
+      if (!id || !String(id).startsWith('chat-')) return;
+      try {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('jump-pop');
+        void el.offsetWidth;
+        el.classList.add('jump-pop');
+        setTimeout(() => el.classList.remove('jump-pop'), 1200);
+      } catch {}
+    };
+    window.addEventListener('jumpTo', onJump);
+    return () => window.removeEventListener('jumpTo', onJump);
+  }, []);
+
   // Normalize real data for charts
   const locationChartData = useMemo(() => {
     const arr = Array.isArray(chartData?.locationData) ? chartData.locationData : [];
@@ -647,8 +666,8 @@ const ReportAssistant = ({ stats = {}, uploadStats = {}, chartData = {} }) => {
         {sidebarOpen && (
           <div className="h-full flex flex-col">
             {/* Sidebar Header */}
-            <div className="p-4 border-b flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div id="chat-history" className="p-4 border-b flex items-center justify-between rounded-xl">
+        <div id="chat-generate" className="flex items-center gap-2 rounded-xl">
                 <Sparkles className="w-5 h-5 text-purple-600" />
                 <span className="font-medium">AI การตั้งค่า</span>
               </div>

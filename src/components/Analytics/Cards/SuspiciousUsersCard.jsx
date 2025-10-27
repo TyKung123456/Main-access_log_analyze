@@ -34,6 +34,20 @@ const SuspiciousUsersCard = ({
             >{showAllSuspects ? 'เฉพาะ Top 10' : 'แสดงทั้งหมด'}</button>
           )}
         </div>
+        <div className="w-full mt-2 text-[11px] text-gray-600">
+          {topListType === 'suspicious' && (
+            <span>คะแนนรวมจากสัดส่วนเหตุการณ์ เช่น ปฏิเสธ/นอกเวลา</span>
+          )}
+          {topListType === 'denied' && (
+            <span>จำนวนเหตุการณ์ที่ถูกปฏิเสธ (allow=false หรือสถานะปฏิเสธ)</span>
+          )}
+          {topListType === 'off_hours' && (
+            <span>จำนวนเหตุการณ์เข้าถึงในช่วงนอกเวลา/วันหยุด</span>
+          )}
+          {topListType === 'multiple_attempts' && (
+            <span>จำนวนสถานที่ที่มีการพยายามล้มเหลวซ้ำ (≥3 ครั้ง/สถานที่)</span>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-4 flex-1 min-h-0">
         <ul className="divide-y h-full overflow-y-auto">
@@ -65,11 +79,15 @@ const SuspiciousUsersCard = ({
                 <li className="py-3 text-sm text-gray-500">ไม่มีข้อมูล</li>
               ) : items.map(([user,count], idx) => (
                 <li key={idx} className="py-2 text-sm flex items-center justify-between">
-                  <div className="truncate min-w-0">
+                  <button
+                    className="truncate min-w-0 text-left"
+                    onClick={() => onExplainUser?.({ user, userKey: user })}
+                    title="ดูรายละเอียดผู้ใช้"
+                  >
                     <span className="mr-2 text-gray-500">{idx+1}.</span>
                     <span className="font-medium text-gray-900 truncate inline-block max-w-[14rem]" title={user}>{user}</span>
-                  </div>
-                  <span className="font-semibold text-gray-800">{count.toLocaleString('th-TH')}</span>
+                  </button>
+                  <span className="font-semibold text-gray-800">{count.toLocaleString('th-TH')} ครั้ง</span>
                 </li>
               ))
             );
@@ -81,4 +99,3 @@ const SuspiciousUsersCard = ({
 };
 
 export default SuspiciousUsersCard;
-

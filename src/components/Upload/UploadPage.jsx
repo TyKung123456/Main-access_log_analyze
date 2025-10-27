@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import uploadService from '../../services/uploadService.js';
 import {
   Upload,
   AlertCircle,
@@ -37,9 +38,9 @@ const StatCard = ({ icon, label, value, color = 'blue', trend = null, size = 'no
             {React.cloneElement(icon, { className: `${iconClasses} text-${color}-600` })}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-gray-500 font-medium mb-1">{label}</p>
+            <p className={`text-sm ${compact ? 'text-gray-600' : 'text-gray-500'} font-medium mb-1 whitespace-normal break-words leading-snug`} title={typeof label === 'string' ? label : undefined}>{label}</p>
             <div className="flex items-center gap-2">
-              <p className={`${valueClasses} font-bold text-gray-900 whitespace-nowrap min-w-[72px]`}>{value}</p>
+              <p className={`${valueClasses} font-bold text-gray-900 break-words`}>{value}</p>
               {trend && (
                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${trend > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                   }`}>
@@ -244,6 +245,25 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
   const [lastUpload, setLastUpload] = useState(null);
   const [showTips, setShowTips] = useState(false);
   const previewScrollRef = useRef(null);
+
+  // In-page jump support for sidebar sections: upload-drop, upload-template, upload-history
+  useEffect(() => {
+    const onJump = (e) => {
+      const id = e?.detail?.sectionId;
+      if (!id || !String(id).startsWith('upload-')) return;
+      try {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('jump-pop');
+        void el.offsetWidth;
+        el.classList.add('jump-pop');
+        setTimeout(() => el.classList.remove('jump-pop'), 1200);
+      } catch {}
+    };
+    window.addEventListener('jumpTo', onJump);
+    return () => window.removeEventListener('jumpTo', onJump);
+  }, []);
 
   // Notify layout to enter focus (full-width) when a file is selected
   useEffect(() => {
@@ -464,39 +484,46 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !filePreview) return;
+    if (!selectedFile) return;
 
     setIsUploading(true);
     setUploadProgress(0);
+    setUploadComplete(false);
+    setUploadStats(null);
 
-    // Simulate upload progress
-    const duration = 3000 + Math.random() * 2000;
-    const interval = 100;
-    const steps = duration / interval;
-    let currentStep = 0;
+    try {
+      const result = await uploadService.uploadFile(selectedFile, (progress) => {
+        setUploadProgress(progress);
+      });
 
-    const progressInterval = setInterval(() => {
-      currentStep++;
-      const progress = Math.min(100, (currentStep / steps) * 100);
-      setUploadProgress(Math.floor(progress));
+      setIsUploading(false);
+      setUploadComplete(true);
 
-      if (progress >= 100) {
-        clearInterval(progressInterval);
-        setIsUploading(false);
-        setUploadComplete(true);
+      const stats = {
+        fileName: result?.statistics?.fileName || selectedFile.name,
+        fileSize: result?.statistics?.fileSize || `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
+        // แสดงจำนวนในไฟล์ทั้งหมด (ไม่ใช่เฉพาะที่บันทึกแล้ว)
+        totalRecords: result?.statistics?.totalRows ?? 0,
+        insertedRows: result?.statistics?.insertedRows ?? 0,
+        duplicatesSkipped: result?.statistics?.duplicatesSkipped ?? 0,
+        failedRows: result?.statistics?.failedRows ?? 0,
+        validRows: result?.statistics?.validRows ?? undefined,
+        errorRows: result?.statistics?.errorRows ?? 0,
+        skippedRows: result?.statistics?.skippedRows ?? 0,
+        processingTime: result?.statistics?.processingTime || '-',
+        successRate: result?.success ? '100%' : undefined,
+        uploadTime: new Date().toISOString(),
+        dataQuality: filePreview?.quality
+      };
 
-        // Set upload stats
-        setUploadStats({
-          fileName: selectedFile.name,
-          fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
-          totalRecords: filePreview.totalRows,
-          processingTime: filePreview.estimatedTime,
-          successRate: '100%',
-          uploadTime: new Date().toISOString(),
-          dataQuality: filePreview.quality
-        });
-      }
-    }, interval);
+      setUploadStats(stats);
+      try { localStorage.setItem('lastUploadStats', JSON.stringify(stats)); } catch {}
+    } catch (err) {
+      console.error('Upload failed:', err);
+      setIsUploading(false);
+      setUploadComplete(false);
+      setFileError(err?.message || 'อัปโหลดล้มเหลว');
+    }
   };
 
   const getProgressStage = (progress) => {
@@ -527,7 +554,7 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
         </div>
 
         {/* Main Upload Area */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" id="upload-drop">
           <div className="p-4 md:p-6">
             {!selectedFile && (
               <div
@@ -578,7 +605,7 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
                 </div>
 
                 {/* Quick actions */}
-                <div className="mt-4 flex items-center justify-center gap-3">
+                <div id="upload-template" className="mt-4 flex items-center justify-center gap-3">
                   <a
                     href="/templates/access_log_template.csv"
                     download
@@ -595,18 +622,23 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
 
             {/* File Preview */}
             {selectedFile && (
-              <div className={`${inModal ? 'grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}`}>
-                <div className="border-2 border-dashed rounded-lg p-4 text-center border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                  <div className="mb-2 text-sm font-medium text-gray-700">เลือกไฟล์ใหม่</div>
-                  <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileSelection} className="hidden" id="file-reupload" />
-                  <label htmlFor="file-reupload" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer text-sm">
-                    <Upload className="w-4 h-4" /> เลือกไฟล์
-                  </label>
-                  <div className="mt-2 text-xs text-gray-500">รองรับ .csv .xlsx .xls</div>
-                </div>
+              (() => {
+                const showLeft = !uploadComplete && !inModal;
+                return (
+                  <div className={`${showLeft ? (inModal ? 'grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4' : 'grid grid-cols-1 md:grid-cols-2 gap-4') : 'grid grid-cols-1 gap-4'}`}>
+                    {showLeft && (
+                      <div className="border-2 border-dashed rounded-lg p-4 text-center border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                        <div className="mb-2 text-sm font-medium text-gray-700">เลือกไฟล์ใหม่</div>
+                        <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileSelection} className="hidden" id="file-reupload" />
+                        <label htmlFor="file-reupload" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 cursor-pointer text-sm">
+                          <Upload className="w-4 h-4" /> เลือกไฟล์
+                        </label>
+                        <div className="mt-2 text-xs text-gray-500">รองรับ .csv .xlsx .xls</div>
+                      </div>
+                    )}
 
-                <div ref={previewScrollRef} className={`${inModal ? 'relative space-y-4 max-h-[60vh] md:max-h-[70vh] overflow-y-auto pr-1' : 'space-y-4'}`}>
-                  <FilePreview file={selectedFile} preview={filePreview} isAnalyzing={isAnalyzing} onRemove={resetState} inModal={inModal} />
+                    <div ref={previewScrollRef} className={`${inModal ? 'relative space-y-4 max-h-[60vh] md:max-h-[70vh] overflow-y-auto pr-1' : 'space-y-4'}`}>
+                      <FilePreview file={selectedFile} preview={filePreview} isAnalyzing={isAnalyzing} onRemove={resetState} inModal={inModal} />
 
                   {filePreview && !isUploading && !uploadComplete && (
                     <div className="text-center space-y-2">
@@ -629,12 +661,24 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
                         <div className="p-2 bg-green-500 rounded-lg"><CheckCircle className="w-6 h-6 text-white" /></div>
                         <div>
                           <h3 className="text-base font-bold text-green-800">🎉 อัปโหลดสำเร็จ!</h3>
-                          <p className="text-green-700">ประมวลผลข้อมูล <span className="font-bold">{new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)}</span> รายการเรียบร้อยแล้ว</p>
+                          {uploadStats.insertedRows === 0 && uploadStats.duplicatesSkipped > 0 ? (
+                            <p className="text-green-700">ไฟล์นี้มีข้อมูลซ้ำทั้งหมด <span className="font-bold">{new Intl.NumberFormat('th-TH').format(uploadStats.duplicatesSkipped)}</span> รายการ จึงไม่มีข้อมูลใหม่ถูกเพิ่ม</p>
+                          ) : (
+                            <p className="text-green-700">ไฟล์มีทั้งหมด <span className="font-bold">{new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)}</span> รายการ บันทึกแล้ว <span className="font-bold">{new Intl.NumberFormat('th-TH').format(uploadStats.insertedRows || 0)}</span> รายการ</p>
+                          )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <StatCard icon={<Clock />} label="เวลาประมวลผล" value={uploadStats.processingTime} color="green" size="normal" />
-                        <StatCard icon={<Database />} label="จำนวนข้อมูล" value={new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)} color="blue" size="normal" />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                        <StatCard icon={<Clock />} label="เวลาประมวลผล" value={uploadStats.processingTime} color="green" compact />
+                        <StatCard icon={<Database />} label="บันทึกแล้ว" value={new Intl.NumberFormat('th-TH').format(uploadStats.insertedRows || 0)} color="blue" compact />
+                        <StatCard icon={<Database />} label="ข้อมูลซ้ำ" value={new Intl.NumberFormat('th-TH').format(uploadStats.duplicatesSkipped || 0)} color="yellow" compact />
+                        <StatCard icon={<Database />} label="ทั้งหมดในไฟล์" value={new Intl.NumberFormat('th-TH').format(uploadStats.totalRecords)} color="purple" compact />
+                        {typeof uploadStats.failedRows === 'number' && (
+                          <StatCard icon={<AlertCircle />} label="บันทึกไม่สำเร็จ" value={new Intl.NumberFormat('th-TH').format(uploadStats.failedRows)} color="red" compact />
+                        )}
+                        {(uploadStats.errorRows > 0 || uploadStats.skippedRows > 0) && (
+                          <StatCard icon={<Info />} label="ข้าม/ไม่ครบ" value={new Intl.NumberFormat('th-TH').format((uploadStats.errorRows||0) + (uploadStats.skippedRows||0))} color="amber" compact />
+                        )}
                       </div>
                       <div className="mt-3 text-right">
                         <button onClick={resetState} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-green-300 text-green-700 rounded-md hover:bg-green-50 transition-colors text-sm">
@@ -654,8 +698,10 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path d="M5 15l7-7 7 7"/></svg>
                     </button>
                   )}
-                </div>
-              </div>
+                    </div>
+                  </div>
+                );
+              })()
             )}
 
             {/* Error Messages */}
@@ -675,7 +721,7 @@ const UploadPage = ({ onFocusChange, inModal = false }) => {
 
         {/* Last upload summary */}
         {!selectedFile && lastUpload && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div id="upload-history" className="bg-white border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-700">อัปโหลดล่าสุด</div>
               <div className="text-xs text-gray-500">{new Date(lastUpload.uploadTime).toLocaleString('th-TH')}</div>

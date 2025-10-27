@@ -94,24 +94,49 @@ class EnhancedUploadService {
       reader.onload = (e) => {
         try {
           const data = e.target.result;
-          const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
-          const sheetName = workbook.SheetNames[0];
-          if (!sheetName) throw new Error('ไม่พบแผ่นงาน (worksheet) ในไฟล์');
-          
-          const worksheet = workbook.Sheets[sheetName];
-          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, blankrows: false });
-          
+          const fileName = file.name.toLowerCase();
+
+          let rows = [];
+          if (fileName.endsWith('.csv')) {
+            // Decode CSV text with encoding fallback
+            const bytes = new Uint8Array(data);
+            let text = new TextDecoder('utf-8').decode(bytes);
+            const looksMojibake = /à¸|Ã|â€™|â€/.test(text);
+            if (looksMojibake) {
+              try {
+                text = new TextDecoder('windows-874').decode(bytes);
+              } catch (e1) {
+                try {
+                  text = new TextDecoder('iso-8859-11').decode(bytes); // TIS-620 alias
+                } catch (e2) {
+                  console.warn('Failed to decode as windows-874/tis-620, using utf-8 text');
+                }
+              }
+            }
+
+            const wb = XLSX.read(text, { type: 'string' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, blankrows: false });
+          } else {
+            // Excel path
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: false });
+            const sheetName = workbook.SheetNames[0];
+            if (!sheetName) throw new Error('ไม่พบแผ่นงาน (worksheet) ในไฟล์');
+            const worksheet = workbook.Sheets[sheetName];
+            rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, blankrows: false });
+          }
+
           if (rows.length < 2) throw new Error('ไฟล์ต้องมีอย่างน้อย 1 header และ 1 แถวข้อมูล');
 
           const headers = rows[0].map(h => String(h || '').trim());
           const headerMap = this.validateAndMapHeaders(headers);
-          
+
           const dataRows = rows.slice(1).map(rowArray => {
-              const rowObj = {};
-              headers.forEach((header, index) => {
-                  if (header) rowObj[header] = rowArray[index];
-              });
-              return rowObj;
+            const rowObj = {};
+            headers.forEach((header, index) => {
+              if (header) rowObj[header] = rowArray[index];
+            });
+            return rowObj;
           });
 
           if (dataRows.length > this.MAX_RECORDS) {
@@ -125,6 +150,7 @@ class EnhancedUploadService {
         }
       };
       reader.onerror = () => reject(new Error('เกิดข้อผิดพลาดขณะอ่านไฟล์'));
+      // Always read as ArrayBuffer; we handle CSV decoding ourselves
       reader.readAsArrayBuffer(file);
     });
   }
@@ -162,6 +188,20 @@ class EnhancedUploadService {
             headerMap[value] = headers[index];
         }
     }
+
+    // Map common synonyms to our standard keys (best-effort)
+    const synonyms = {
+      'card number': 'cardNumberHash',
+      'cardnumber': 'cardNumberHash',
+      'card no': 'cardNumberHash',
+      'id': 'idHash',
+      'user': 'userHash'
+    };
+    lowerCaseHeaders.forEach((hName, idx) => {
+      if (synonyms[hName] && !headerMap[synonyms[hName]]) {
+        headerMap[synonyms[hName]] = headers[idx];
+      }
+    });
     
     console.log('✅ Headers validated and mapped:', headerMap);
     return headerMap;
@@ -191,11 +231,16 @@ class EnhancedUploadService {
         }
 
         const validation = this.validateRow(row, rowNumber, headerMap, duplicateCheck);
+        // ผ่อนกฎ: ไม่คัดทิ้งแถวแม้มี error เว้นแต่เป็นแถวว่างจริงๆ
         if (validation.errors.length > 0) {
-          errors.push(...validation.errors);
-          continue;
+          const onlyEmpty = validation.errors.length === 1 && /แถวว่าง|empty row/i.test(validation.errors[0]);
+          if (onlyEmpty) {
+            skippedRows++;
+            continue;
+          }
+          // นอกนั้นเก็บเป็นคำเตือนเพื่อให้ยังบันทึกได้
+          warnings.push(...validation.errors);
         }
-        
         warnings.push(...validation.warnings);
         const cleanedRow = this.cleanRowData(row, headerMap);
         validRows.push(cleanedRow);
@@ -218,20 +263,19 @@ class EnhancedUploadService {
   validateRow(row, rowNumber, headerMap, duplicateCheck) {
     const errors = [];
     const warnings = [];
-
-    // Required fields check using headerMap
-    if (!row[headerMap.dateTime]) errors.push(`แถวที่ ${rowNumber}: ขาดข้อมูล "Date Time"`);
-    if (!row[headerMap.cardName]) errors.push(`แถวที่ ${rowNumber}: ขาดข้อมูล "Card Name"`);
-    if (!row[headerMap.location]) errors.push(`แถวที่ ${rowNumber}: ขาดข้อมูล "Location"`);
-
-    if (errors.length > 0) return { errors, warnings };
+    // ผ่อนกฎ: ตัดทิ้งเฉพาะแถวว่างเท่านั้น
+    const hasAnyValue = Object.values(row).some(v => v !== null && v !== undefined && String(v).trim() !== '');
+    if (!hasAnyValue) {
+      errors.push(`แถวที่ ${rowNumber}: แถวว่าง (empty row)`);
+      return { errors, warnings };
+    }
     
     // Date validation
     const dateValue = row[headerMap.dateTime];
     const parsedDate = this.parseFlexibleDate(dateValue);
-    if (!parsedDate) {
-      errors.push(`แถวที่ ${rowNumber}: รูปแบบวันที่ใน "Date Time" ไม่ถูกต้อง: "${dateValue}"`);
-    } else if (parsedDate > new Date()) {
+    if (!parsedDate && dateValue != null && String(dateValue).trim() !== '') {
+      warnings.push(`แถวที่ ${rowNumber}: รูปแบบวันที่ใน "Date Time" ไม่ถูกต้อง: "${dateValue}"`);
+    } else if (parsedDate && parsedDate > new Date()) {
       warnings.push(`แถวที่ ${rowNumber}: วันที่เป็นวันในอนาคต: "${dateValue}"`);
     }
 
@@ -256,18 +300,33 @@ class EnhancedUploadService {
     const parsedDate = this.parseFlexibleDate(row[h.dateTime]);
 
     // Map standard keys to cleaned values
-    cleaned.dateTime = parsedDate.toISOString();
-    cleaned.cardName = this.cleanString(row[h.cardName]);
+    cleaned.dateTime = parsedDate ? parsedDate.toISOString() : null;
+    // Prefer Card Name; if absent, fallback to User / Card Number / ID
+    const candidateName = this.cleanString(row[h.cardName])
+      || (h.userHash && this.cleanString(row[h.userHash]))
+      || (h.cardNumberHash && this.cleanString(row[h.cardNumberHash]))
+      || (h.idHash && this.cleanString(row[h.idHash]))
+      || null;
+    cleaned.cardName = candidateName;
     cleaned.location = this.cleanString(row[h.location]);
     cleaned.allow = this.parseBoolean(row[h.allow]);
     cleaned.direction = this.normalizeDirection(row[h.direction]);
     cleaned.userType = this.cleanString(row[h.userType]);
     cleaned.transactionId = this.cleanString(row[h.transactionId]);
-    
+    // Optional fields (map if present)
+    if (h.door) cleaned.door = this.cleanString(row[h.door]);
+    if (h.device) cleaned.device = this.cleanString(row[h.device]);
+    if (h.reason) cleaned.reason = this.cleanString(row[h.reason]);
+    if (h.channel) cleaned.channel = this.cleanString(row[h.channel]);
+    if (h.permission) cleaned.permission = this.cleanString(row[h.permission]);
+    if (h.cardNumberHash) cleaned.cardNumberHash = this.cleanString(row[h.cardNumberHash]);
+    if (h.idHash) cleaned.idHash = this.cleanString(row[h.idHash]);
+    if (h.userHash) cleaned.userHash = this.cleanString(row[h.userHash]);
+
     // Add computed date fields
-    cleaned.day = parsedDate.getDate();
-    cleaned.month = parsedDate.getMonth() + 1;
-    cleaned.year = parsedDate.getFullYear();
+    cleaned.day = parsedDate ? parsedDate.getDate() : null;
+    cleaned.month = parsedDate ? (parsedDate.getMonth() + 1) : null;
+    cleaned.year = parsedDate ? parsedDate.getFullYear() : null;
 
     return cleaned;
   }
@@ -275,11 +334,12 @@ class EnhancedUploadService {
   // --- Phase 5: Data Insertion ---
   async insertDataOptimized(validRows, progressCallback, startProgress, endProgress) {
     if (validRows.length === 0) {
-      return { insertedCount: 0, duplicatesSkipped: 0, failedBatches: [] };
+      return { insertedCount: 0, duplicatesSkipped: 0, failedRows: 0, failedBatches: [] };
     }
     
     let insertedCount = 0;
     let duplicatesSkipped = 0;
+    let failedRows = 0;
     const failedBatches = [];
     const totalBatches = Math.ceil(validRows.length / this.INSERT_BATCH_SIZE);
 
@@ -290,6 +350,7 @@ class EnhancedUploadService {
             const result = await apiService.appendLogData(batch);
             insertedCount += result.insertedCount || 0;
             duplicatesSkipped += result.duplicatesSkipped || 0;
+            failedRows += result.failedRows || 0;
         } catch (error) {
             console.error(`❌ Failed to insert batch ${i + 1}:`, error);
             failedBatches.push({ batchIndex: i, error: error.message });
@@ -298,22 +359,22 @@ class EnhancedUploadService {
         progressCallback(Math.round(progress), `กำลังบันทึกข้อมูล (${i + 1}/${totalBatches})`);
     }
     
-    console.log(`✅ Insertion completed: ${insertedCount} inserted, ${failedBatches.length} failed batches.`);
-    return { insertedCount, duplicatesSkipped, failedBatches };
+    console.log(`✅ Insertion completed: ${insertedCount} inserted, ${failedRows} failed rows, ${failedBatches.length} failed batches.`);
+    return { insertedCount, duplicatesSkipped, failedRows, failedBatches };
   }
 
   // --- Phase 6: Final Report ---
   createFinalReport(file, startTime, results) {
     const { totalRows, validationResult, insertResult, preview } = results;
     const { validRows, errors, warnings, skippedRows } = validationResult;
-    const { insertedCount, duplicatesSkipped, failedBatches } = insertResult;
+    const { insertedCount, duplicatesSkipped, failedRows, failedBatches } = insertResult;
     
     const processingTime = Date.now() - startTime;
-    const success = errors.length === 0 && failedBatches.length === 0;
+    const success = errors.length === 0 && failedBatches.length === 0 && failedRows === 0;
 
     let message = `ประมวลผลสำเร็จ! บันทึกข้อมูลใหม่ ${insertedCount.toLocaleString()} รายการ`;
     if (!success) {
-        message = `ประมวลผลเสร็จสิ้น แต่พบปัญหา: บันทึกได้ ${insertedCount.toLocaleString()} รายการ, พบข้อผิดพลาด ${errors.length} แถว และ ${failedBatches.length} batch ล้มเหลว`;
+        message = `ประมวลผลเสร็จสิ้น แต่พบปัญหา: บันทึกได้ ${insertedCount.toLocaleString()} รายการ, แถวไม่ผ่านการตรวจสอบ ${errors.length} แถว, แถวบันทึกไม่สำเร็จ ${failedRows} แถว, และ ${failedBatches.length} batch ล้มเหลว`;
     }
     
     return {
@@ -326,6 +387,7 @@ class EnhancedUploadService {
         totalRows,
         validRows: validRows.length,
         insertedRows: insertedCount,
+        failedRows,
         errorRows: errors.length,
         warningRows: warnings.length,
         skippedRows,
@@ -340,16 +402,47 @@ class EnhancedUploadService {
   // --- Helper Functions ---
   parseFlexibleDate(dateInput) {
     if (!dateInput) return null;
+    // Already a Date
     if (dateInput instanceof Date && !isNaN(dateInput)) return dateInput;
-    
-    // For Excel numeric dates
-    if (typeof dateInput === 'number' && dateInput > 1) {
-        return new Date(Date.UTC(0, 0, dateInput - 1));
+
+    // Excel serial number (days since 1899-12-30)
+    if (typeof dateInput === 'number' && isFinite(dateInput)) {
+      const excelEpoch = 25569; // days between 1899-12-30 and 1970-01-01
+      const ms = (dateInput - excelEpoch) * 86400 * 1000;
+      const d = new Date(ms);
+      return isNaN(d.getTime()) ? null : d;
     }
 
-    const dateString = String(dateInput).trim();
-    const date = new Date(dateString);
-    return isNaN(date.getTime()) ? null : date;
+    let s = String(dateInput).trim();
+    if (!s) return null;
+
+    // Normalize common ISO-like format without 'T'
+    // e.g., '2024-09-01 08:15:00' -> '2024-09-01T08:15:00'
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(s)) {
+      s = s.replace(' ', 'T');
+    }
+
+    // Handle DD/MM/YYYY (or DD-MM-YYYY), with optional time
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (m) {
+      let [ , dd, mm, yyyy, hh='0', min='0', sec='0' ] = m;
+      let y = parseInt(yyyy, 10);
+      // Convert Buddhist year to Gregorian if needed
+      if (y >= 2400) y -= 543;
+      const d = new Date(
+        y,
+        Math.max(0, parseInt(mm, 10) - 1),
+        parseInt(dd, 10),
+        parseInt(hh, 10),
+        parseInt(min, 10),
+        parseInt(sec, 10)
+      );
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Fallback to native Date parser
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
   }
   
   cleanString(value) {
